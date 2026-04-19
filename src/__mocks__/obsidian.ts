@@ -54,6 +54,35 @@ export class Notice {
     }
 }
 
+// Mock requestUrl — tests that need to stub it should vi.mock this module
+// or pass a custom RequestUrlFn into DocindexClient directly.
+export interface RequestUrlParam {
+    url: string;
+    method?: string;
+    headers?: Record<string, string>;
+    contentType?: string;
+    body?: string | ArrayBuffer;
+    throw?: boolean;
+}
+
+export interface RequestUrlResponse {
+    status: number;
+    headers: Record<string, string>;
+    arrayBuffer?: ArrayBuffer;
+    json?: unknown;
+    text?: string;
+}
+
+export async function requestUrl(_req: RequestUrlParam): Promise<RequestUrlResponse> {
+    throw new Error("requestUrl must be mocked in tests");
+}
+
+// Platform mock
+export const Platform = {
+    isMobileApp: false,
+    isDesktop: true,
+};
+
 // Mock Setting class
 export class Setting {
     settingEl: HTMLElement;
