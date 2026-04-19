@@ -1,7 +1,7 @@
 import type { Note } from "@/domain/model/Note";
 import { SimilarNote } from "@/domain/model/SimilarNote";
 import type { DocindexClient } from "./DocindexClient";
-import type { DocindexHit } from "./types";
+import { getDisplayScore, type DocindexHit } from "./types";
 
 /**
  * Result shape for text-based semantic search.
@@ -82,7 +82,7 @@ function groupHitsByPath(hits: DocindexHit[], sourceChunk: string): SimilarNote[
         new SimilarNote(
             primary.title || primary.path,
             primary.path,
-            primary.score,
+            getDisplayScore(primary),
             primary.snippet,
             sourceChunk,
             extras,
