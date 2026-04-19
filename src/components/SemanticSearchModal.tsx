@@ -51,6 +51,7 @@ interface SearchResultItemProps {
     note: SimilarNote;
     file: TFile | null;
     isSelected: boolean;
+    scrollOnSelect: boolean;
     noteDisplayMode: "title" | "path" | "smart";
     allFiles: TFile[];
     onSelect: () => void;
@@ -62,6 +63,7 @@ const SearchResultItem: React.FC<SearchResultItemProps> = ({
     note,
     file,
     isSelected,
+    scrollOnSelect,
     noteDisplayMode,
     allFiles,
     onSelect,
@@ -70,11 +72,14 @@ const SearchResultItem: React.FC<SearchResultItemProps> = ({
 }) => {
     const itemRef = useRef<HTMLDivElement>(null);
 
+    // Only auto-scroll when the parent says the selection change came from
+    // keyboard navigation. Scrolling on initial render or when the user is
+    // still typing yanks the viewport out from under them.
     useEffect(() => {
-        if (isSelected && itemRef.current) {
+        if (isSelected && scrollOnSelect && itemRef.current) {
             itemRef.current.scrollIntoView({ block: "nearest" });
         }
-    }, [isSelected]);
+    }, [isSelected, scrollOnSelect]);
 
     const handleClick = (e: React.MouseEvent) => {
         e.preventDefault();
@@ -121,7 +126,22 @@ function useSemanticSearch(textSearchService: TextSearchServiceLike) {
     const [selectedIndex, setSelectedIndex] = useState(0);
     const [isSearching, setIsSearching] = useState(false);
     const [tokenWarning, setTokenWarning] = useState<string | null>(null);
+    // Tracks the source of the last selectedIndex change. Only "keyboard"
+    // triggers auto-scroll — initial render, new search results ("reset"),
+    // and mouse hover ("mouse") must never pull the viewport around.
+    const [selectionSource, setSelectionSource] =
+        useState<"keyboard" | "mouse" | "reset">("reset");
     const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+    const selectByKeyboard = useCallback((updater: (prev: number) => number) => {
+        setSelectionSource("keyboard");
+        setSelectedIndex(updater);
+    }, []);
+
+    const selectByMouse = useCallback((index: number) => {
+        setSelectionSource("mouse");
+        setSelectedIndex(index);
+    }, []);
 
     const performSearch = useCallback(
         async (searchQuery: string) => {
@@ -144,6 +164,7 @@ function useSemanticSearch(textSearchService: TextSearchServiceLike) {
                     setTokenWarning(null);
                 }
                 setResults(searchResult.similarNotes);
+                setSelectionSource("reset");
                 setSelectedIndex(0);
             } catch (error) {
                 console.error("Search error:", error);
@@ -163,7 +184,17 @@ function useSemanticSearch(textSearchService: TextSearchServiceLike) {
         };
     }, [query, performSearch]);
 
-    return { query, setQuery, results, selectedIndex, setSelectedIndex, isSearching, tokenWarning };
+    return {
+        query,
+        setQuery,
+        results,
+        selectedIndex,
+        selectByKeyboard,
+        selectByMouse,
+        selectionSource,
+        isSearching,
+        tokenWarning,
+    };
 }
 
 const SemanticSearchContent: React.FC<SemanticSearchContentProps> = ({
@@ -172,8 +203,17 @@ const SemanticSearchContent: React.FC<SemanticSearchContentProps> = ({
     noteDisplayMode,
     onClose,
 }) => {
-    const { query, setQuery, results, selectedIndex, setSelectedIndex, isSearching, tokenWarning } =
-        useSemanticSearch(textSearchService);
+    const {
+        query,
+        setQuery,
+        results,
+        selectedIndex,
+        selectByKeyboard,
+        selectByMouse,
+        selectionSource,
+        isSearching,
+        tokenWarning,
+    } = useSemanticSearch(textSearchService);
     const inputRef = useRef<HTMLInputElement>(null);
 
     useEffect(() => {
@@ -228,13 +268,13 @@ const SemanticSearchContent: React.FC<SemanticSearchContentProps> = ({
             switch (e.key) {
                 case "ArrowDown":
                     e.preventDefault();
-                    setSelectedIndex((prev) =>
+                    selectByKeyboard((prev) =>
                         prev < results.length - 1 ? prev + 1 : prev
                     );
                     break;
                 case "ArrowUp":
                     e.preventDefault();
-                    setSelectedIndex((prev) => (prev > 0 ? prev - 1 : prev));
+                    selectByKeyboard((prev) => (prev > 0 ? prev - 1 : prev));
                     break;
                 case "Enter":
                     e.preventDefault();
@@ -252,7 +292,7 @@ const SemanticSearchContent: React.FC<SemanticSearchContentProps> = ({
                     break;
             }
         },
-        [setSelectedIndex, results, selectedIndex, openNote, insertLink, onClose]
+        [selectByKeyboard, results, selectedIndex, openNote, insertLink, onClose]
     );
 
     return (
@@ -292,9 +332,10 @@ const SemanticSearchContent: React.FC<SemanticSearchContentProps> = ({
                             note={note}
                             file={file}
                             isSelected={index === selectedIndex}
+                            scrollOnSelect={selectionSource === "keyboard"}
                             noteDisplayMode={noteDisplayMode}
                             allFiles={allFiles}
-                            onSelect={() => setSelectedIndex(index)}
+                            onSelect={() => selectByMouse(index)}
                             onOpen={(newTab) => openNote(index, newTab)}
                             onInsertLink={() => insertLink(index)}
                         />
