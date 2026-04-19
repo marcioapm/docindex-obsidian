@@ -1,0 +1,11 @@
+{
+    "id": "similar-notes",
+    "name": "Similar Notes",
+    "version": "1.2.0",
+    "minAppVersion": "1.8.9",
+    "description": "Find semantically similar notes using AI. Local models (mobile & desktop) or cloud APIs.",
+    "author": "Young Lee",
+    "authorUrl": "https://github.com/joybro",
+    "fundingUrl": "https://buymeacoffee.com/joybro",
+    "isDesktopOnly": false
+}
