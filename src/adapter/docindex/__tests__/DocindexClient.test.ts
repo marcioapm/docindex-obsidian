@@ -22,6 +22,7 @@ function makeClient(overrides: Partial<DocindexSettings> = {}, requestFn?: Retur
         backendUrl: "http://100.0.0.1:7777",
         bearerToken: "test-token",
         limit: 10,
+        relevanceThreshold: 0,
         ...overrides,
     };
     const fn = requestFn ?? vi.fn();
@@ -209,5 +210,59 @@ describe("DocindexClient", () => {
         const { client } = makeClient({}, requestFn);
         const res = await client.search("q");
         expect(res.hits).toHaveLength(1);
+    });
+
+    it("filters hits below relevanceThreshold using score_normalized", async () => {
+        const requestFn = vi.fn().mockResolvedValue({
+            status: 200,
+            headers: {},
+            json: {
+                hits: [
+                    { path: "a.md", title: "a", heading_path: [], snippet: "", score: 99, score_rrf: 99, score_normalized: 0.9, chunk_id: "1" },
+                    { path: "b.md", title: "b", heading_path: [], snippet: "", score: 50, score_rrf: 50, score_normalized: 0.45, chunk_id: "2" },
+                    { path: "c.md", title: "c", heading_path: [], snippet: "", score: 10, score_rrf: 10, score_normalized: 0.2, chunk_id: "3" },
+                ],
+            },
+        });
+        const { client } = makeClient({ relevanceThreshold: 0.4 }, requestFn);
+        const res = await client.search("q");
+        expect(res.hits.map((h) => h.path)).toEqual(["a.md", "b.md"]);
+        // Normalized fields survive the domain conversion.
+        expect(res.hits[0].scoreNormalized).toBe(0.9);
+        expect(res.hits[0].scoreRrf).toBe(99);
+    });
+
+    it("threshold=0 keeps everything (filter is a no-op)", async () => {
+        const requestFn = vi.fn().mockResolvedValue({
+            status: 200,
+            headers: {},
+            json: {
+                hits: [
+                    { path: "a.md", title: "a", heading_path: [], snippet: "", score: 0.01, score_normalized: 0.01, chunk_id: "1" },
+                ],
+            },
+        });
+        const { client } = makeClient({ relevanceThreshold: 0 }, requestFn);
+        const res = await client.search("q");
+        expect(res.hits).toHaveLength(1);
+    });
+
+    it("falls back to score when score_normalized is absent (old server)", async () => {
+        // With an old server, hit.score is the RRF value (not in [0,1]). Setting
+        // a tiny threshold should still let high-RRF hits through; setting a
+        // huge one filters everything. This keeps pre-v0.3 servers usable.
+        const requestFn = vi.fn().mockResolvedValue({
+            status: 200,
+            headers: {},
+            json: {
+                hits: [
+                    { path: "a.md", title: "a", heading_path: [], snippet: "", score: 0.03, chunk_id: "1" },
+                    { path: "b.md", title: "b", heading_path: [], snippet: "", score: 0.01, chunk_id: "2" },
+                ],
+            },
+        });
+        const { client } = makeClient({ relevanceThreshold: 0.02 }, requestFn);
+        const res = await client.search("q");
+        expect(res.hits.map((h) => h.path)).toEqual(["a.md"]);
     });
 });

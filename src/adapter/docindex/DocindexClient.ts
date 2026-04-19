@@ -1,11 +1,12 @@
 import { Notice, requestUrl, type RequestUrlParam, type RequestUrlResponse } from "obsidian";
 import log from "loglevel";
-import type {
-    DocindexHit,
-    DocindexHitWire,
-    DocindexSearchResponse,
-    DocindexSearchResponseWire,
-    DocindexSettings,
+import {
+    getDisplayScore,
+    type DocindexHit,
+    type DocindexHitWire,
+    type DocindexSearchResponse,
+    type DocindexSearchResponseWire,
+    type DocindexSettings,
 } from "./types";
 
 /**
@@ -116,7 +117,7 @@ export class DocindexClient {
             this.disabledForSession = true;
             throw new DocindexError("malformed", "response did not match expected shape");
         }
-        return parsed;
+        return { hits: filterByThreshold(parsed.hits, settings.relevanceThreshold) };
     }
 
     private parseResponse(resp: RequestUrlResponse): DocindexSearchResponse | null {
@@ -164,6 +165,20 @@ function toDomainHit(wire: DocindexHitWire): DocindexHit {
 
 function isRecord(v: unknown): v is Record<string, unknown> {
     return typeof v === "object" && v !== null && !Array.isArray(v);
+}
+
+/**
+ * Drops hits whose display score is below `threshold`. Threshold ≤ 0 is a
+ * no-op so users who disable filtering see everything the server returned.
+ *
+ * Uses `getDisplayScore`, which falls back to `score` when the server
+ * predates v0.3 and didn't emit `score_normalized`. That fallback is lossy
+ * (RRF scores aren't in [0, 1]), so during rollout the threshold behaves
+ * roughly like "keep what the server ranked" — still better than nothing.
+ */
+export function filterByThreshold(hits: DocindexHit[], threshold: number): DocindexHit[] {
+    if (!(threshold > 0)) return hits;
+    return hits.filter((h) => getDisplayScore(h) >= threshold);
 }
 
 function isHitWire(v: unknown): v is DocindexHitWire {
