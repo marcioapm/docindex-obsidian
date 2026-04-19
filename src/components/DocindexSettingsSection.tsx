@@ -16,6 +16,7 @@ interface DocindexSettingsSectionProps {
  *  - Backend URL (e.g. a Tailscale host).
  *  - Bearer token (masked; never persisted to any log).
  *  - Result limit (1..50).
+ *  - Relevance threshold (0.0..1.0; hits below the normalized score are hidden).
  *  - Test connection button → GET /health.
  */
 export function renderDocindexSection(props: DocindexSettingsSectionProps): void {
@@ -86,6 +87,29 @@ export function renderDocindexSection(props: DocindexSettingsSectionProps): void
             text.inputEl.min = "1";
             text.inputEl.max = "50";
             text.inputEl.style.width = "80px";
+        });
+
+    new Setting(containerEl)
+        .setName("Relevance threshold")
+        .setDesc(
+            "Drop results with a normalized score below this value. " +
+                "0 = show everything the server ranked. " +
+                "0.40 ≈ rank ≤ 15 in at least one branch (default). " +
+                "Raise toward 0.60 for tighter results."
+        )
+        .addSlider((slider) => {
+            slider
+                .setLimits(0, 1, 0.05)
+                .setValue(settings.relevanceThreshold)
+                .setDynamicTooltip()
+                .onChange(async (value) => {
+                    await settingsService.update({
+                        docindex: {
+                            ...settingsService.get().docindex,
+                            relevanceThreshold: value,
+                        },
+                    });
+                });
         });
 
     new Setting(containerEl)
