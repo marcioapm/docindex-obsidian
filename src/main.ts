@@ -69,7 +69,7 @@ export default class MainPlugin extends Plugin {
             await this.settingsService.update({ lastPluginVersion: currentVersion });
         }
 
-        // Add settings tab (IndexedNoteMTimeStore will be set later)
+        // Add settings tab
         this.docindexClient = new DocindexClient(() => this.settingsService.get().docindex);
         this.remoteSearchService = new RemoteSearchService(this.docindexClient);
         this.settingTab = new SimilarNotesSettingTab(
@@ -225,15 +225,9 @@ export default class MainPlugin extends Plugin {
         this.noteRepository = new VaultNoteRepository(this.app);
         this.indexedNotesMTimeStore = new IndexedNoteMTimeStore();
 
-        // Now that mTimeStore is initialized, set it in the settings tab
-        this.settingTab.setMTimeStore(this.indexedNotesMTimeStore);
-
         // Create services in proper dependency order
         this.modelService = new EmbeddingService(this.settingsService);
         this.noteChunkRepository = new OramaNoteChunkRepository(this.app.vault);
-
-        // Set the model service in the settings tab
-        this.settingTab.setModelService(this.modelService);
 
         // Initialize IndexedNoteMTimeStore with vault ID
         // @ts-expect-error - appId exists at runtime but not in type definitions
@@ -479,8 +473,6 @@ export default class MainPlugin extends Plugin {
         }
 
         // Pass NoteChunkRepository to the settings tab after it's initialized
-        await this.settingTab.setNoteChunkRepository(this.noteChunkRepository);
-
         // Start the noteIndexingService loop
         this.noteIndexingService.startLoop();
     }
