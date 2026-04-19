@@ -131,6 +131,7 @@ export class SimilarNoteCoordinator {
                 preview: similarNote.similarChunk,
                 sourceChunk: showSourceChunk ? similarNote.sourceChunk : undefined,
                 additionalChunks: similarNote.additionalChunks,
+                headingPath: similarNote.headingPath,
                 path: similarNote.path,
             }))
             .filter((vm) => {

@@ -16,6 +16,12 @@ export interface SimilarNoteEntry {
      * user can see everywhere the note matched.
      */
     additionalChunks?: string[];
+    /**
+     * Heading chain of the top-scoring chunk (root → deepest). When
+     * present, clicking the row opens the note scrolled to the deepest
+     * heading; otherwise the note opens at the top.
+     */
+    headingPath?: string[];
 }
 
 export interface NoteBottomViewModel {
@@ -117,8 +123,8 @@ const SearchResult = ({
     allSimilarNotes,
 }: {
     note: SimilarNoteEntry;
-    onNoteClick: (e: React.MouseEvent, file: TFile) => void;
-    onContextMenu: (e: React.MouseEvent, file: TFile) => void;
+    onNoteClick: (e: React.MouseEvent, note: SimilarNoteEntry) => void;
+    onContextMenu: (e: React.MouseEvent, note: SimilarNoteEntry) => void;
     noteDisplayMode: "title" | "path" | "smart";
     allSimilarNotes: SimilarNoteEntry[];
 }) => {
@@ -188,9 +194,9 @@ const SearchResult = ({
                 className="tree-item-self search-result-file-title is-clickable"
                 draggable="true"
                 onDragStart={handleDragStart}
-                onClick={(e) => onNoteClick(e, note.file)}
+                onClick={(e) => onNoteClick(e, note)}
                 onKeyDown={undefined}
-                onContextMenu={(e) => onContextMenu(e, note.file)}
+                onContextMenu={(e) => onContextMenu(e, note)}
             >
                 <div
                     className={
@@ -250,8 +256,8 @@ const SearchResultsContainer = ({
     noteDisplayMode,
 }: {
     similarNotes: SimilarNoteEntry[];
-    onNoteClick: (e: React.MouseEvent, file: TFile) => void;
-    onContextMenu: (e: React.MouseEvent, file: TFile) => void;
+    onNoteClick: (e: React.MouseEvent, note: SimilarNoteEntry) => void;
+    onContextMenu: (e: React.MouseEvent, note: SimilarNoteEntry) => void;
     noteDisplayMode: "title" | "path" | "smart";
 }) => {
     if (similarNotes.length === 0) {
@@ -336,32 +342,37 @@ const NoteBottomViewReact: React.FC<NoteBottomViewProps> = ({
         return () => sub.unsubscribe();
     }, [bottomViewModelSubject$, leaf, viewType, workspace]);
 
-    const openNote = (file: TFile, newTab = false) => {
-        workspace.openLinkText(file.path, "", newTab);
+    const openNote = (file: TFile, newTab = false, headingPath?: string[]) => {
+        // When a heading is available, Obsidian's openLinkText accepts
+        // `path#Heading` and scrolls to the first match. Falls back to the
+        // top of the file for plain-text notes or chunks without headings.
+        const deepest = headingPath?.[headingPath.length - 1];
+        const link = deepest ? `${file.path}#${deepest}` : file.path;
+        workspace.openLinkText(link, "", newTab);
     };
 
-    const handleNoteClick = (e: React.MouseEvent, file: TFile) => {
+    const handleNoteClick = (e: React.MouseEvent, note: SimilarNoteEntry) => {
         e.preventDefault();
-        openNote(file, e.ctrlKey || e.metaKey);
+        openNote(note.file, e.ctrlKey || e.metaKey, note.headingPath);
     };
 
-    const handleContextMenu = (e: React.MouseEvent, file: TFile) => {
+    const handleContextMenu = (e: React.MouseEvent, note: SimilarNoteEntry) => {
         e.preventDefault();
         const menu = new Menu();
         menu.addItem((item) =>
             item.setTitle("Open link").onClick(() => {
-                openNote(file, false);
+                openNote(note.file, false, note.headingPath);
             })
         );
         menu.addItem((item) =>
             item.setTitle("Open in new tab").onClick(() => {
-                openNote(file, true);
+                openNote(note.file, true, note.headingPath);
             })
         );
         menu.addSeparator();
         menu.addItem((item) =>
             item.setTitle("Copy Obsidian URL").onClick(() => {
-                const uri = `obsidian://open?vault=${vaultName}&file=${file.path}`;
+                const uri = `obsidian://open?vault=${vaultName}&file=${note.file.path}`;
                 navigator.clipboard.writeText(uri);
             })
         );
