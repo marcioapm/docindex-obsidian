@@ -2,8 +2,7 @@ import type {
     NoteBottomViewModel,
     SimilarNoteEntry,
 } from "@/components/NoteBottomViewReact";
-import type { Note } from "@/domain/model/Note";
-import type { NoteRepository } from "@/domain/repository/NoteRepository";
+import { Note } from "@/domain/model/Note";
 import type { SimilarNote } from "@/domain/model/SimilarNote";
 import log from "loglevel";
 import type { TFile, Vault } from "obsidian";
@@ -11,9 +10,8 @@ import { BehaviorSubject } from "rxjs";
 import type { SettingsService } from "./SettingsService";
 
 /**
- * Minimal surface SimilarNoteCoordinator depends on. Structural interface
- * lets us swap in the docindex dispatcher without the upstream class's
- * private fields blocking assignability.
+ * Minimal surface SimilarNoteCoordinator depends on. Structural interface so
+ * any remote or local similar-note provider can be injected.
  */
 interface SimilarNoteFinderLike {
     findSimilarNotes(note: Note, limit?: number): Promise<SimilarNote[]>;
@@ -26,27 +24,34 @@ interface SimilarNoteCacheEntry {
 
 const MAX_CACHE_SIZE = 20;
 
+/**
+ * Drives the sidebar view-model.
+ *
+ * Reads the active note's content via `vault.cachedRead`, asks the injected
+ * similar-notes provider (a `RemoteSearchService` in the remote-only build)
+ * for hits, and emits the resulting view-model on every file-open.
+ *
+ * No embedding, no chunking, no indexing here — all that lives on the
+ * docindex-server backend.
+ */
 export class SimilarNoteCoordinator {
     private noteBottomViewModel$ = new BehaviorSubject<NoteBottomViewModel>({
         currentFile: null,
         similarNoteEntries: [],
-        noteDisplayMode: "title", // Will be properly initialized in constructor
-        sidebarResultCount: 10,   // Will be properly initialized in constructor
-        bottomResultCount: 5,     // Will be properly initialized in constructor
+        noteDisplayMode: "title",
+        sidebarResultCount: 10,
+        bottomResultCount: 5,
     });
-    private cache = new Map<string, SimilarNoteCacheEntry>(); // file path -> entry
+    private cache = new Map<string, SimilarNoteCacheEntry>();
 
     constructor(
         private readonly vault: Vault,
-        private readonly noteRepository: NoteRepository,
         private readonly similarNoteFinder: SimilarNoteFinderLike,
         private readonly settingsService: SettingsService
     ) {
-        // Initialize with current settings
         const settings = this.settingsService.get();
-        const currentModel = this.noteBottomViewModel$.value;
         this.noteBottomViewModel$.next({
-            ...currentModel,
+            ...this.noteBottomViewModel$.value,
             noteDisplayMode: settings.noteDisplayMode,
             sidebarResultCount: settings.sidebarResultCount,
             bottomResultCount: settings.bottomResultCount,
@@ -55,23 +60,19 @@ export class SimilarNoteCoordinator {
         this.settingsService
             .getNewSettingsObservable()
             .subscribe((newSettings) => {
-                if (newSettings.includeFrontmatter !== undefined) {
+                if (
+                    newSettings.sidebarResultCount !== undefined ||
+                    newSettings.bottomResultCount !== undefined
+                ) {
                     this.cache.clear();
                 }
 
-                // Clear cache if result count settings changed (need to fetch more/fewer results)
-                if (newSettings.sidebarResultCount !== undefined || newSettings.bottomResultCount !== undefined) {
-                    this.cache.clear();
-                }
-
-                // Update current model with new settings
-                const settings = this.settingsService.get();
-                const currentModel = this.noteBottomViewModel$.value;
+                const s = this.settingsService.get();
                 this.noteBottomViewModel$.next({
-                    ...currentModel,
-                    noteDisplayMode: settings.noteDisplayMode,
-                    sidebarResultCount: settings.sidebarResultCount,
-                    bottomResultCount: settings.bottomResultCount,
+                    ...this.noteBottomViewModel$.value,
+                    noteDisplayMode: s.noteDisplayMode,
+                    sidebarResultCount: s.sidebarResultCount,
+                    bottomResultCount: s.bottomResultCount,
                 });
             });
     }
@@ -81,19 +82,13 @@ export class SimilarNoteCoordinator {
     }
 
     async onFileOpen(file: TFile | null) {
-        if (!file || file.extension !== "md") {
-            return;
-        }
-
+        if (!file || file.extension !== "md") return;
         this.emitNoteBottomViewModel(file);
     }
 
     async emitNoteBottomViewModelFromPath(path: string) {
         const file = this.vault.getFileByPath(path);
-        if (!file) {
-            return;
-        }
-
+        if (!file) return;
         this.emitNoteBottomViewModel(file);
     }
 
@@ -116,34 +111,32 @@ export class SimilarNoteCoordinator {
         }
 
         const settings = this.settingsService.get();
-        const note = await this.noteRepository.findByFile(
-            file,
-            !settings.includeFrontmatter
+        const content = await this.vault.cachedRead(file);
+        const note = new Note(file.path, file.basename, content, []);
+        const maxResultCount = Math.max(
+            settings.sidebarResultCount,
+            settings.bottomResultCount
         );
-        const maxResultCount = Math.max(settings.sidebarResultCount, settings.bottomResultCount);
         const similarNotes = await this.similarNoteFinder.findSimilarNotes(
             note,
             maxResultCount
         );
 
         const showSourceChunk = settings.showSourceChunk;
-
         const similarNoteEntries = similarNotes
             .map((similarNote) => ({
                 file: this.vault.getFileByPath(similarNote.path),
                 title: similarNote.title,
                 similarity: similarNote.similarity,
                 preview: similarNote.similarChunk,
-                sourceChunk: showSourceChunk
-                    ? similarNote.sourceChunk
-                    : undefined,
+                sourceChunk: showSourceChunk ? similarNote.sourceChunk : undefined,
                 path: similarNote.path,
             }))
-            .filter((viewModel) => {
-                if (viewModel.file === null) {
+            .filter((vm) => {
+                if (vm.file === null) {
                     log.error(
-                        `Stale data detected: similar note not found in vault (path: ${viewModel.path}). ` +
-                        `This may indicate the file was renamed/moved but the index was not updated.`
+                        `Stale data: similar note not found in vault (path: ${vm.path}). ` +
+                            `The file may have been renamed/moved since the remote index was last built.`
                     );
                     return false;
                 }

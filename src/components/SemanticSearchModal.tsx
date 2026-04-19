@@ -4,11 +4,11 @@ import { MarkdownView, Modal } from "obsidian";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import type { SimilarNote } from "@/domain/model/SimilarNote";
-import type { TextSearchResult } from "@/domain/service/TextSearchService";
+import type { TextSearchResult } from "@/adapter/docindex";
 
 /**
- * The modal accepts any object that satisfies this shape — either the
- * upstream TextSearchService or the docindex SearchDispatcher.
+ * Minimal structural surface the modal depends on. Satisfied by
+ * `RemoteSearchService`.
  */
 interface TextSearchServiceLike {
     findSimilarNotesFromText(text: string, limit?: number): Promise<TextSearchResult>;

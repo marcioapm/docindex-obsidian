@@ -1,21 +1,30 @@
 import type { Note } from "@/domain/model/Note";
 import { SimilarNote } from "@/domain/model/SimilarNote";
-import type { TextSearchResult } from "@/domain/service/TextSearchService";
 import type { DocindexClient } from "./DocindexClient";
 import type { DocindexHit } from "./types";
 
 /**
- * Remote replacement for `TextSearchService` + `SimilarNoteFinder` when the
- * docindex provider is enabled.
+ * Result shape for text-based semantic search.
  *
- * We match the public signatures of both upstream services structurally so
- * callers (the semantic-search modal, similar-note coordinator) can swap us
- * in without knowing which provider is active.
+ * Previously lived in `src/domain/service/TextSearchService.ts` when the plugin
+ * supported a local embedding pipeline. After the strip to remote-only this is
+ * the single source of truth for the shape.
+ */
+export interface TextSearchResult {
+    similarNotes: SimilarNote[];
+    tokenCount: number;
+    maxTokens: number;
+    isOverLimit: boolean;
+}
+
+/**
+ * Remote-only search service. All calls go through `DocindexClient` to the
+ * docindex-server backend. No local embedding, no local index.
  */
 export class RemoteSearchService {
     constructor(private readonly client: DocindexClient) {}
 
-    /** Mirrors `TextSearchService.findSimilarNotesFromText`. */
+    /** Text-to-similar-notes lookup. Matches the former `TextSearchService` surface. */
     async findSimilarNotesFromText(text: string, limit = 10): Promise<TextSearchResult> {
         try {
             const response = await this.client.search(text, limit);
@@ -32,12 +41,12 @@ export class RemoteSearchService {
         }
     }
 
-    /** Matches the signature of `TextSearchService.checkTokenLimit`. */
+    /** Stub — the remote backend does not expose a token-limit endpoint. */
     async checkTokenLimit(_text: string): Promise<{ tokenCount: number; maxTokens: number; isOverLimit: boolean }> {
         return { tokenCount: 0, maxTokens: 0, isOverLimit: false };
     }
 
-    /** Mirrors `SimilarNoteFinder.findSimilarNotes`. */
+    /** Path-to-similar-notes lookup. Matches the former `SimilarNoteFinder` surface. */
     async findSimilarNotes(note: Note, limit = 5): Promise<SimilarNote[]> {
         if (!note.path) return [];
         try {

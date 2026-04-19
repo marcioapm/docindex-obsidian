@@ -1,7 +1,7 @@
 export { DocindexClient, DocindexError } from "./DocindexClient";
 export type { DocindexErrorKind, RequestUrlFn } from "./DocindexClient";
 export { RemoteSearchService } from "./RemoteSearchService";
-export { SearchDispatcher } from "./SearchDispatcher";
+export type { TextSearchResult } from "./RemoteSearchService";
 export type {
     DocindexHit,
     DocindexSearchResponse,

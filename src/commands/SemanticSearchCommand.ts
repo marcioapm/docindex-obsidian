@@ -1,12 +1,12 @@
 import type { App, Plugin } from "obsidian";
 import type { SettingsService } from "@/application/SettingsService";
-import type { TextSearchResult } from "@/domain/service/TextSearchService";
+import type { TextSearchResult } from "@/adapter/docindex";
 import { SemanticSearchModal } from "@/components/SemanticSearchModal";
 import type { Command } from "./Command";
 
 /**
- * Structural surface the command depends on — lets us pass either the
- * upstream TextSearchService or the docindex SearchDispatcher.
+ * Minimal structural surface the command depends on. Satisfied by
+ * `RemoteSearchService`.
  */
 interface TextSearchServiceLike {
     findSimilarNotesFromText(text: string, limit?: number): Promise<TextSearchResult>;
