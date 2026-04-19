@@ -3,55 +3,87 @@
 This plugin is forked from [`joybro/obsidian-similar-notes`](https://github.com/joybro/obsidian-similar-notes) (MIT).
 
 - **Forked from:** `upstream/main` at `9c7e474` ("chore: bump version to 1.2.0")
-- **Fork strategy:** `git merge upstream/main --allow-unrelated-histories`, keeping our `README.md`, `CLAUDE.md`, `.claude/`, and `.gitignore` on top of the upstream tree. All of upstream's commit history is preserved; `git log` shows both our pre-fork commits and the upstream history.
-- **`upstream` remote:** `https://github.com/joybro/obsidian-similar-notes.git`. Cherry-pick future upstream fixes from there.
+- **Fork strategy:** after forking, the upstream local-indexing pipeline was stripped — the plugin is now a thin remote-only client against `docindex-server`. Upstream commit history is preserved (`git log` still shows both pre-fork commits and the upstream history).
+- **`upstream` remote:** `https://github.com/joybro/obsidian-similar-notes.git`. Future upstream fixes only make sense if they touch the small surface we keep (settings plumbing, sidebar view-model, semantic-search modal UI).
 
-## Files added by the fork
+## What the fork kept from upstream
 
-Core docindex-server adapter (replaces embeddings + local index with remote calls when enabled):
+Only the UI surface that makes sense for a remote-only client:
+
+- `src/application/SettingsService.ts` — settings persistence. Still carries upstream legacy fields (modelProvider, modelId, openai*, gemini*, etc.) for backwards-compat with existing vault-side `data.json` files; none of them are read anywhere in the live code path anymore.
+- `src/application/SimilarNoteCoordinator.ts` — drives the sidebar view-model. Rewritten to accept a `SimilarNoteFinderLike` interface (satisfied by the fork's `RemoteSearchService`) and to read the active file via `vault.cachedRead` instead of going through a `NoteRepository`.
+- `src/components/SimilarNotesSidebarView.tsx` + `NoteBottomViewReact.tsx` — the sidebar and its React view.
+- `src/components/SemanticSearchModal.tsx` — the Cmd/Ctrl+Shift+O modal (interface-swapped to talk to `RemoteSearchService`).
+- `src/components/SimilarNotesSettingTab.tsx` — reduced to **Docindex** + **Debug** (log level) sections only.
+- `src/commands/{Command,ShowSimilarNotesCommand,SemanticSearchCommand}.ts` — the two user-facing commands + base interface.
+- `src/domain/model/{Note,SimilarNote}.ts` — the two plain domain types still used by the coordinator and the UI.
+- `src/utils/{displayUtils,viewUtils}.ts` — rendering helpers.
+- `src/__mocks__/obsidian.ts` — test mock. Extended by the fork with `requestUrl`, `RequestUrlParam`, `RequestUrlResponse`, `Platform`, `Setting`, `Modal`, `Notice`.
+
+## What the fork added
+
+Core `docindex-server` adapter:
 
 - `src/adapter/docindex/DocindexClient.ts` — thin `requestUrl` wrapper with runtime response validation and narrowed error kinds (`network`, `unauthorized`, `server`, `malformed`, `not-configured`).
-- `src/adapter/docindex/RemoteSearchService.ts` — implements the same public surface as `TextSearchService` and `SimilarNoteFinder`; converts `DocindexHit` → `SimilarNote`.
-- `src/adapter/docindex/SearchDispatcher.ts` — routes each call to local or remote at call time, based on `settings.docindex.enabled` + client availability.
+- `src/adapter/docindex/RemoteSearchService.ts` — the only search provider now. Implements `findSimilarNotes(note, limit)`, `findSimilarNotesFromText(text, limit)`, `checkTokenLimit(text)`. Owns its own `TextSearchResult` shape. Converts `DocindexHit` → `SimilarNote`.
 - `src/adapter/docindex/types.ts` — wire types (snake_case) + domain types (camelCase) + `DocindexSettings` defaults.
 - `src/adapter/docindex/index.ts` — barrel.
-- `src/adapter/docindex/__tests__/DocindexClient.test.ts` — 10 unit tests covering happy path, auth errors, server errors, network errors, malformed-response disable, URL normalization.
+- `src/adapter/docindex/__tests__/DocindexClient.test.ts` — 12 unit tests covering the full client surface.
 - `src/components/DocindexSettingsSection.tsx` — "docindex (remote search)" group in the settings tab (enabled toggle, backend URL, bearer token masked, result limit, Test connection button calling `GET /health`).
+- `src/__tests__/main.test.ts` — source-level smoke test asserting `main.ts` never re-imports a local-pipeline module.
 
-## Files changed by the fork
+## What the fork deleted
 
-- `manifest.json` — `id`, `name`, `description`, `author` updated; `isDesktopOnly: false` preserved from upstream. Version reset to `0.1.0`.
-- `package.json` — `name`, `version`, `description` updated.
-- `README.md` — our install / Tailscale docs.
-- `.gitignore` — adds `meta.json`, `public/`.
-- `src/application/SettingsService.ts` — adds `docindex: DocindexSettings` field to `SimilarNotesSettings` (plus default and load-merge logic).
-- `src/application/SimilarNoteCoordinator.ts` — constructor accepts a `SimilarNoteFinderLike` interface instead of the concrete `SimilarNoteFinder` class. Same runtime behavior; the interface lets us pass `SearchDispatcher`.
-- `src/commands/SemanticSearchCommand.ts` — accepts `TextSearchServiceLike` interface.
-- `src/components/SemanticSearchModal.tsx` — same interface swap.
-- `src/components/SimilarNotesSettingTab.tsx` — optional `DocindexClient` injected; renders the docindex settings section when present.
-- `src/main.ts` — instantiates `DocindexClient`, `RemoteSearchService`, `SearchDispatcher`; injects dispatcher into `SimilarNoteCoordinator` and `SemanticSearchCommand`.
-- `src/__mocks__/obsidian.ts` — adds `requestUrl`, `RequestUrlParam`, `RequestUrlResponse`, `Platform` to the test mock.
+Everything upstream had for on-device indexing:
 
-## Files kept as-is from upstream
+**Embedding providers + adapters**
+- `src/domain/service/EmbeddingProvider.ts`, `EmbeddingService.ts`
+- `src/domain/service/{Gemini,Ollama,OpenAI,Transformers}EmbeddingProvider.ts`
+- `src/domain/service/transformers.worker.ts`
+- `src/domain/service/NoteChunkingService.ts`, `SimilarNoteFinder.ts`, `TextSearchService.ts`
+- `src/adapter/{gemini,openai,ollama,huggingface,orama}/` (all five entire dirs, including `orama.worker.ts`)
 
-Everything not listed above. In particular:
+**Local index + vault change pipeline**
+- `src/infrastructure/` (entire dir): `IndexedDBChunkStorage`, `IndexedDBMTimeStorage`, `IndexedNoteMTimeStore`, `VaultNoteRepository`, `WorkerManager`, `LangchainNoteChunkingService`
+- `src/services/noteChangeQueue.ts` (+ test)
+- `src/utils/folderExclusion.ts` (+ test), `errorHandling.ts`, `environmentInfo.ts`
 
-- The full upstream indexing pipeline (`src/domain/**`, `src/infrastructure/**`, `src/adapter/{orama,openai,ollama,gemini,huggingface}/**`, `src/services/**`). This continues to work when `docindex.enabled` is `false` or the client is not configured.
-- All upstream React components (`src/components/**`) other than the two surgical interface swaps listed above.
-- `esbuild.config.mjs`, `tsconfig.json`, `vitest.config.ts` — unchanged.
+**Model / index UI**
+- `src/components/{ModelSettingsSection,IndexSettingsSection,UsageStatsSection}.tsx`
+- `src/components/{Gemini,OpenAI,Ollama,Builtin}SettingsSection.tsx`
+- `src/components/{GPUSettingModal,LoadModelModal,StatusBarView,NoteBottomView}.ts(x)`
+- `src/components/{modelChangesApplier,modelDescriptionBuilder,modelInfoCache}.ts`
+
+**View manager + indexing lifecycle**
+- `src/application/{LeafViewCoordinator,NoteBottomViewManager,BaseViewManager,ViewManager,NoteIndexingService}.ts`
+
+**Commands tied to the local pipeline**
+- `src/commands/{ReindexAllNotesCommand,ToggleInDocumentViewCommand}.ts`
+
+**Domain types only used by the deleted layers**
+- `src/domain/model/{NoteChunk,NoteChunkDTO}.ts`
+- `src/domain/repository/{NoteRepository,NoteChunkRepository}.ts`
+
+**Dropped runtime dependencies**
+- `@huggingface/transformers`, `@langchain/core`, `@langchain/textsplitters`, `@orama/orama`, `@orama/plugin-data-persistence`, `comlink`, `picomatch`, `esbuild-plugin-polyfill-node`, `esbuild-plugin-inline-worker`, `fake-indexeddb`, `@types/picomatch`.
+
+**Build config simplified**
+- `esbuild.config.mjs` — dropped `workers-only` mode, inline-worker plugin, and node polyfill plugin. Just bundles `src/main.ts`.
+- `package.json` — `test` script is plain `vitest run` (no worker pre-build).
 
 ## Design notes
 
-**Why a dispatcher instead of replacing the providers wholesale?** The upstream local pipeline (embeddings, chunking, Orama vector store) is decoupled from search and has value on desktop. Keeping it in place lets desktop users stay on local inference while opting into the remote backend. The dispatcher is ~40 lines and picks per call, so settings changes take effect immediately.
+**Why no dispatcher?** Earlier phases kept a `SearchDispatcher` to route between local and remote providers. With the local pipeline gone there's only one path, so routing is dead code — deleted.
 
-**Why not expose the remote provider through the upstream `EmbeddingProvider` interface?** Because the backend does the full search pipeline (chunking + embedding + hybrid BM25 + semantic) server-side. The plugin doesn't have — and shouldn't have — local embeddings for the server's corpus. The dispatcher swap happens at the level above embeddings.
+**Settings legacy fields.** `SimilarNotesSettings` still declares upstream fields (`modelProvider`, `modelId`, `openai*`, `gemini*`, `useGPU`, etc.). They aren't read anywhere in the live code path, but keeping the field shape avoids wiping user `data.json` on upgrade. A follow-up commit can prune the interface once we're comfortable losing the migration surface.
 
 **Runtime validation.** The client hand-rolls a guard against the server's JSON shape. On malformed input it raises one `Notice` and flips `disabledForSession = true` so subsequent queries short-circuit until settings change (`reset()`). We deliberately do not retry malformed responses.
 
 **Bearer token handling.** Stored in settings, included only in the `Authorization: Bearer …` header, masked in the UI (`type="password"`). Never written to `log.*` or `console.*`.
 
-**Mobile.** All network calls go through `obsidian.requestUrl` — `fetch` has CORS/TLS quirks on iOS/Android. No Node APIs are used in the new adapter code. The manifest is `isDesktopOnly: false` (inherited from upstream).
+**Mobile.** All network calls go through `obsidian.requestUrl` — `fetch` has CORS/TLS quirks on iOS/Android. No Node APIs are used. The manifest is `isDesktopOnly: false` (inherited from upstream and load-bearing for this fork).
 
 ## Deviations / TODO
 
-None for Phase 3. Phase 4 (rerank controls, hybrid-weight tuning, UI polish, similar-notes side-pane direct-to-remote wiring) is explicitly out of scope.
+- Prune legacy upstream fields from `SimilarNotesSettings` once a `data.json` migration is written.
+- Prune the `SimilarNotesSidebarView` path if/when sidebar UI is rewritten to talk to `RemoteSearchService` directly (it currently still flows through `SimilarNoteCoordinator` — which is the right shape, but the indirection could be flattened).

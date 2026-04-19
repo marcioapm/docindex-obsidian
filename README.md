@@ -1,10 +1,16 @@
 # obsidian-docindex
 
-Obsidian plugin (desktop + mobile) that routes semantic + BM25 search through a remote [`docindex-server`](https://github.com/marcioapm/docindex-server) over Tailscale. Fork of [`joybro/obsidian-similar-notes`](https://github.com/joybro/obsidian-similar-notes) (MIT) — the upstream local-inference pipeline is still there; this fork adds a `docindex` provider that you opt into from settings.
+Obsidian plugin (desktop + mobile) that routes semantic + BM25 search through a remote [`docindex-server`](https://github.com/marcioapm/docindex-server) over Tailscale. Fork of [`joybro/obsidian-similar-notes`](https://github.com/joybro/obsidian-similar-notes) (MIT).
 
-## Status
+**This is a thin remote-only client.** The plugin no longer runs any embedding, chunking, or vector-indexing locally — the upstream local pipeline has been stripped. `docindex-server` does the work on a Tailscale-reachable backend; the plugin just queries it and renders results.
 
-Phase 3 in place: the plugin forks cleanly, builds, and has the remote provider wired into the upstream semantic-search modal and similar-notes coordinator. When `docindex` is enabled in settings, every search / similar-notes call goes to the backend instead of the local Orama index.
+## What it does
+
+- **Similar notes sidebar** — on every `file-open`, sends the active note to `POST /similar` and shows the top-N most semantically similar notes.
+- **Semantic search modal** (`Cmd/Ctrl + Shift + O`) — debounced free-text `POST /search` against the backend.
+- **Drag-to-link** — drag a sidebar result into the editor to insert an Obsidian wiki link.
+
+No local embeddings, no local vector store, no IndexedDB, no workers. The bundle is ~180 KB (rxjs + react).
 
 ## Install (manual, until a release workflow is wired up)
 
@@ -31,9 +37,9 @@ If the plugin shows `docindex: backend unreachable (Tailscale?)`, that's almost 
 ## How it works
 
 - `DocindexClient` wraps `POST /search` / `POST /similar` / `GET /health` using Obsidian's `requestUrl` (NOT `fetch` — `fetch` has CORS/TLS quirks on iOS/Android). Bearer token is sent as `Authorization: Bearer …` and is never logged.
-- `RemoteSearchService` turns backend `hits` into the same `SimilarNote` shape the upstream UI renders.
-- `SearchDispatcher` checks `settings.docindex.enabled` + `client.isAvailable()` on every call and picks the remote or local provider. This means toggling the setting takes effect immediately — no reload.
-- Runtime validation: if the backend responds with something we don't expect, the client surfaces a single `Notice` and disables itself for the rest of the session (until you change settings).
+- `RemoteSearchService` turns backend `hits` into the `SimilarNote` shape the UI renders.
+- `SimilarNoteCoordinator` reads the active note's content with `vault.cachedRead`, hands it to `RemoteSearchService.findSimilarNotes`, and emits the resulting view-model. Per-path cache keyed on `file.stat.mtime`; cleared when result-count settings change.
+- Runtime validation: if the backend responds with an unexpected shape, the client surfaces a single `Notice` and disables itself for the rest of the session (until settings change).
 
 ## Errors you might see
 
@@ -61,14 +67,14 @@ All non-health routes require `Authorization: Bearer <token>`.
 ```bash
 npm install
 npm run dev         # esbuild in watch mode
-npm test            # vitest (includes the 10 docindex client tests)
+npm test            # vitest — docindex client + main.ts import-surface smoke test
 npm run build       # tsc type-check + production esbuild bundle
 ```
 
-Tests for the docindex client live at `src/adapter/docindex/__tests__/DocindexClient.test.ts`. They mock Obsidian's `requestUrl` and cover the happy path, 401/403, 5xx, network failure, malformed JSON, URL normalization, and the session-disable behavior.
+Tests live at `src/adapter/docindex/__tests__/DocindexClient.test.ts` (happy path, 401/403, 5xx, network failure, malformed JSON, URL normalization, session-disable) and `src/__tests__/main.test.ts` (source-level guard against re-introducing the local pipeline).
 
-See `docs/upstream-delta.md` for the exact set of files we added vs kept from upstream, and the rationale for the `SearchDispatcher` approach.
+See `docs/upstream-delta.md` for the exact delta vs upstream — including the full list of modules we deleted in the remote-only strip.
 
 ## License
 
-Upstream plugin is MIT (see `LICENSE`). Fork-specific code (the `src/adapter/docindex/**` tree and the small surgical wirings in `src/main.ts`, settings tab, and similar-note coordinator) is for personal use.
+Upstream plugin is MIT (see `LICENSE`). Fork-specific code (the `src/adapter/docindex/**` tree and the remote-only wirings in `src/main.ts`, settings tab, and similar-note coordinator) is for personal use.
