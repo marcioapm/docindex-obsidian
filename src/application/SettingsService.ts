@@ -1,5 +1,6 @@
 import { Platform, type Plugin } from "obsidian";
 import { type Observable, Subject } from "rxjs";
+import { DEFAULT_DOCINDEX_SETTINGS, type DocindexSettings } from "@/adapter/docindex";
 
 export interface CachedModelInfo {
     modelId: string;              // Which model this info belongs to
@@ -51,6 +52,7 @@ export interface SimilarNotesSettings {
     lastPluginVersion?: string; // Last version of the plugin that was run
     cachedModelInfo?: CachedModelInfo; // Cached model information
     indexingDelaySeconds: number; // Wait time after file changes before indexing
+    docindex: DocindexSettings; // docindex-server remote search provider config
 }
 
 const DEFAULT_SETTINGS: SimilarNotesSettings = {
@@ -67,6 +69,7 @@ const DEFAULT_SETTINGS: SimilarNotesSettings = {
     sidebarResultCount: 10, // Default to 10 results in sidebar
     bottomResultCount: 5, // Default to 5 results at bottom
     indexingDelaySeconds: 1, // Default to 1 second delay
+    docindex: DEFAULT_DOCINDEX_SETTINGS,
 };
 
 export class SettingsService {
@@ -79,7 +82,11 @@ export class SettingsService {
 
     async load(): Promise<void> {
         const data = await this.plugin.loadData();
-        this.settings = { ...DEFAULT_SETTINGS, ...data };
+        this.settings = {
+            ...DEFAULT_SETTINGS,
+            ...data,
+            docindex: { ...DEFAULT_DOCINDEX_SETTINGS, ...(data?.docindex ?? {}) },
+        };
 
         // For new mobile installations, default to OpenAI provider
         // Built-in models can cause crashes on mobile devices

@@ -2,12 +2,22 @@ import type {
     NoteBottomViewModel,
     SimilarNoteEntry,
 } from "@/components/NoteBottomViewReact";
+import type { Note } from "@/domain/model/Note";
 import type { NoteRepository } from "@/domain/repository/NoteRepository";
-import type { SimilarNoteFinder } from "@/domain/service/SimilarNoteFinder";
+import type { SimilarNote } from "@/domain/model/SimilarNote";
 import log from "loglevel";
 import type { TFile, Vault } from "obsidian";
 import { BehaviorSubject } from "rxjs";
 import type { SettingsService } from "./SettingsService";
+
+/**
+ * Minimal surface SimilarNoteCoordinator depends on. Structural interface
+ * lets us swap in the docindex dispatcher without the upstream class's
+ * private fields blocking assignability.
+ */
+interface SimilarNoteFinderLike {
+    findSimilarNotes(note: Note, limit?: number): Promise<SimilarNote[]>;
+}
 
 interface SimilarNoteCacheEntry {
     mtime: number;
@@ -29,7 +39,7 @@ export class SimilarNoteCoordinator {
     constructor(
         private readonly vault: Vault,
         private readonly noteRepository: NoteRepository,
-        private readonly similarNoteFinder: SimilarNoteFinder,
+        private readonly similarNoteFinder: SimilarNoteFinderLike,
         private readonly settingsService: SettingsService
     ) {
         // Initialize with current settings

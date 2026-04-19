@@ -9,6 +9,8 @@ import type MainPlugin from "../main";
 import { ModelSettingsSection } from "./ModelSettingsSection";
 import { IndexSettingsSection } from "./IndexSettingsSection";
 import type { SettingBuilder } from "./OpenAISettingsSection";
+import { renderDocindexSection } from "./DocindexSettingsSection";
+import type { DocindexClient } from "@/adapter/docindex";
 
 const GITHUB_ISSUES_URL = "https://github.com/joybro/obsidian-similar-notes/issues";
 
@@ -25,6 +27,7 @@ export class SimilarNotesSettingTab extends PluginSettingTab {
     constructor(
         private plugin: MainPlugin,
         private settingsService: SettingsService,
+        private docindexClient?: DocindexClient,
         mTimeStore?: IndexedNoteMTimeStore
     ) {
         super(plugin.app, plugin);
@@ -33,6 +36,11 @@ export class SimilarNotesSettingTab extends PluginSettingTab {
         if (mTimeStore) {
             this.setMTimeStore(mTimeStore);
         }
+    }
+
+    /** Inject the docindex client after construction (optional dependency). */
+    setDocindexClient(client: DocindexClient): void {
+        this.docindexClient = client;
     }
 
     /**
@@ -167,6 +175,15 @@ export class SimilarNotesSettingTab extends PluginSettingTab {
         const displayGroup = new SettingGroup(containerEl).setHeading("Display");
         const displayBuilders = this.getDisplaySettingBuilders();
         displayBuilders.forEach(builder => displayGroup.addSetting(builder));
+
+        // docindex remote-search group (our fork)
+        if (this.docindexClient) {
+            renderDocindexSection({
+                containerEl,
+                settingsService: this.settingsService,
+                client: this.docindexClient,
+            });
+        }
 
         // Debug & Support settings group
         const debugGroup = new SettingGroup(containerEl).setHeading("Debug & Support");

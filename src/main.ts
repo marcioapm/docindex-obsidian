@@ -1,5 +1,6 @@
 import log from "loglevel";
 import { Plugin, type TFile } from "obsidian";
+import { DocindexClient, RemoteSearchService, SearchDispatcher } from "./adapter/docindex";
 import { OramaNoteChunkRepository } from "./adapter/orama/OramaNoteChunkRepository";
 import { LeafViewCoordinator } from "./application/LeafViewCoordinator";
 import { NoteIndexingService } from "./application/NoteIndexingService";
@@ -44,6 +45,9 @@ export default class MainPlugin extends Plugin {
     private indexedNotesMTimeStore: IndexedNoteMTimeStore;
     private statusBarView: StatusBarView;
     private settingTab: SimilarNotesSettingTab;
+    private docindexClient: DocindexClient;
+    private remoteSearchService: RemoteSearchService;
+    private searchDispatcher: SearchDispatcher;
     private commands: Command[] = [];
 
     async onload() {
@@ -66,9 +70,12 @@ export default class MainPlugin extends Plugin {
         }
 
         // Add settings tab (IndexedNoteMTimeStore will be set later)
+        this.docindexClient = new DocindexClient(() => this.settingsService.get().docindex);
+        this.remoteSearchService = new RemoteSearchService(this.docindexClient);
         this.settingTab = new SimilarNotesSettingTab(
             this,
-            this.settingsService
+            this.settingsService,
+            this.docindexClient
         );
         this.addSettingTab(this.settingTab);
 
@@ -249,10 +256,17 @@ export default class MainPlugin extends Plugin {
             this.modelService
         );
 
+        // Dispatcher routes to local or remote (docindex) provider per settings.
+        this.searchDispatcher = new SearchDispatcher(
+            { text: this.textSearchService, similar: this.similarNoteFinder },
+            this.remoteSearchService,
+            this.docindexClient
+        );
+
         this.similarNoteCoordinator = new SimilarNoteCoordinator(
             this.app.vault,
             this.noteRepository,
-            this.similarNoteFinder,
+            this.searchDispatcher,
             this.settingsService
         );
 
@@ -337,7 +351,7 @@ export default class MainPlugin extends Plugin {
             new ReindexAllNotesCommand(this),
             new SemanticSearchCommand(
                 this.app,
-                this.textSearchService,
+                this.searchDispatcher,
                 this.settingsService
             ),
         ];

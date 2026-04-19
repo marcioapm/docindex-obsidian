@@ -4,7 +4,15 @@ import { MarkdownView, Modal } from "obsidian";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import type { SimilarNote } from "@/domain/model/SimilarNote";
-import type { TextSearchService } from "@/domain/service/TextSearchService";
+import type { TextSearchResult } from "@/domain/service/TextSearchService";
+
+/**
+ * The modal accepts any object that satisfies this shape — either the
+ * upstream TextSearchService or the docindex SearchDispatcher.
+ */
+interface TextSearchServiceLike {
+    findSimilarNotesFromText(text: string, limit?: number): Promise<TextSearchResult>;
+}
 
 const MIN_SEARCH_LENGTH = 3;
 const DEBOUNCE_MS = 300;
@@ -102,12 +110,12 @@ const SearchResultItem: React.FC<SearchResultItemProps> = ({
 
 interface SemanticSearchContentProps {
     app: App;
-    textSearchService: TextSearchService;
+    textSearchService: TextSearchServiceLike;
     noteDisplayMode: "title" | "path" | "smart";
     onClose: () => void;
 }
 
-function useSemanticSearch(textSearchService: TextSearchService) {
+function useSemanticSearch(textSearchService: TextSearchServiceLike) {
     const [query, setQuery] = useState("");
     const [results, setResults] = useState<SimilarNote[]>([]);
     const [selectedIndex, setSelectedIndex] = useState(0);
@@ -301,12 +309,12 @@ const SemanticSearchContent: React.FC<SemanticSearchContentProps> = ({
 
 export class SemanticSearchModal extends Modal {
     private root: Root | null = null;
-    private textSearchService: TextSearchService;
+    private textSearchService: TextSearchServiceLike;
     private noteDisplayMode: "title" | "path" | "smart";
 
     constructor(
         app: App,
-        textSearchService: TextSearchService,
+        textSearchService: TextSearchServiceLike,
         noteDisplayMode: "title" | "path" | "smart"
     ) {
         super(app);

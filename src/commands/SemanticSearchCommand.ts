@@ -1,8 +1,17 @@
 import type { App, Plugin } from "obsidian";
 import type { SettingsService } from "@/application/SettingsService";
-import type { TextSearchService } from "@/domain/service/TextSearchService";
+import type { TextSearchResult } from "@/domain/service/TextSearchService";
 import { SemanticSearchModal } from "@/components/SemanticSearchModal";
 import type { Command } from "./Command";
+
+/**
+ * Structural surface the command depends on — lets us pass either the
+ * upstream TextSearchService or the docindex SearchDispatcher.
+ */
+interface TextSearchServiceLike {
+    findSimilarNotesFromText(text: string, limit?: number): Promise<TextSearchResult>;
+    checkTokenLimit(text: string): Promise<{ tokenCount: number; maxTokens: number; isOverLimit: boolean }>;
+}
 
 export class SemanticSearchCommand implements Command {
     id = "semantic-search";
@@ -10,7 +19,7 @@ export class SemanticSearchCommand implements Command {
 
     constructor(
         private app: App,
-        private textSearchService: TextSearchService,
+        private textSearchService: TextSearchServiceLike,
         private settingsService: SettingsService
     ) {}
 
