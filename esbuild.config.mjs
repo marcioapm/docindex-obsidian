@@ -1,17 +1,8 @@
 import builtins from "builtin-modules";
 import esbuild from "esbuild";
-import inlineWorkerPlugin from "esbuild-plugin-inline-worker";
-import { polyfillNode } from "esbuild-plugin-polyfill-node";
 import process from "node:process";
 
 const prod = process.argv[2] === "production";
-
-const polyfillPlugin = polyfillNode({
-    globals: false,
-    polyfills: {
-        stream: true,
-    },
-});
 
 const buildOptions = {
     entryPoints: ["src/main.ts"],
@@ -29,14 +20,6 @@ const buildOptions = {
     define: {
         "process.env.NODE_ENV": prod ? '"production"' : '"development"',
     },
-    plugins: [
-        inlineWorkerPlugin({
-            define: {
-                __IS_TEST__: "false", // Production build is not test
-            },
-            plugins: [polyfillPlugin],
-        }),
-    ],
 };
 
 // Helper function to analyze bundle size from metafile
