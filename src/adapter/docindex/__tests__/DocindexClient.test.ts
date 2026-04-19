@@ -167,6 +167,37 @@ describe("DocindexClient", () => {
         expect(requestFn.mock.calls[0][0].url).toBe("http://host:1/similar");
     });
 
+    it("passes vault-relative hit paths through unchanged (no prefix stripping)", async () => {
+        // The server emits vault-relative paths (e.g. "notes/deep/foo.md").
+        // Obsidian's TFile.path is also vault-relative, so the client must not
+        // rewrite, strip, or prefix hit.path in any way — it's passed verbatim
+        // to consumers like openLinkText() and getAbstractFileByPath().
+        const paths = [
+            "flat.md",
+            "notes/nested.md",
+            "very/deep/nested/path/file.md",
+            "spaces in name.md",
+            "unicode-ü-é-名.md",
+        ];
+        const requestFn = vi.fn().mockResolvedValue({
+            status: 200,
+            headers: {},
+            json: {
+                hits: paths.map((p, i) => ({
+                    path: p,
+                    title: `t${i}`,
+                    heading_path: [],
+                    snippet: "s",
+                    score: 1 - i * 0.1,
+                    chunk_id: `c${i}`,
+                })),
+            },
+        });
+        const { client } = makeClient({}, requestFn);
+        const res = await client.search("q");
+        expect(res.hits.map((h) => h.path)).toEqual(paths);
+    });
+
     it("falls back to parsing resp.text when resp.json is missing", async () => {
         const requestFn = vi.fn().mockResolvedValue({
             status: 200,
