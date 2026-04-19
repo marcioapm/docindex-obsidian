@@ -1,7 +1,7 @@
 {
-    "name": "obsidian-similar-notes",
-    "version": "1.2.0",
-    "description": "Recommends similar notes to the currently viewed note using semantic embeddings",
+    "name": "obsidian-docindex",
+    "version": "0.1.0",
+    "description": "Obsidian plugin that queries a remote docindex-server for semantic + BM25 search. Fork of joybro/obsidian-similar-notes.",
     "main": "main.js",
     "scripts": {
         "dev": "node esbuild.config.mjs",

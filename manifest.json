@@ -1,11 +1,10 @@
 {
-    "id": "similar-notes",
-    "name": "Similar Notes",
-    "version": "1.2.0",
+    "id": "obsidian-docindex",
+    "name": "docindex",
+    "version": "0.1.0",
     "minAppVersion": "1.8.9",
-    "description": "Find semantically similar notes using AI. Local models (mobile & desktop) or cloud APIs.",
-    "author": "Young Lee",
-    "authorUrl": "https://github.com/joybro",
-    "fundingUrl": "https://buymeacoffee.com/joybro",
+    "description": "Semantic + BM25 search over your vault via a remote docindex-server backend. Fork of joybro/obsidian-similar-notes.",
+    "author": "Marcio Martins",
+    "authorUrl": "https://github.com/marcioapm",
     "isDesktopOnly": false
 }
