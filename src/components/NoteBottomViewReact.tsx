@@ -233,7 +233,7 @@ const SearchResult = ({
                 </div>
                 <div className="tree-item-flair-outer">
                     <div className="tree-item-flair">
-                        {note.similarity.toFixed(2)}
+                        {`${Math.round(note.similarity * 100)}%`}
                     </div>
                 </div>
             </div>

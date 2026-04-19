@@ -119,7 +119,7 @@ const SearchResultItem: React.FC<SearchResultItemProps> = ({
             </div>
             <div className="suggestion-aux">
                 <span className="suggestion-flair semantic-search-score">
-                    {note.similarity.toFixed(2)}
+                    {`${Math.round(note.similarity * 100)}%`}
                 </span>
             </div>
         </div>

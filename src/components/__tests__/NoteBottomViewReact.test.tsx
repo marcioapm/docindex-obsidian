@@ -106,8 +106,8 @@ describe("SimilarNotesViewReact", () => {
 
         expect(await screen.findByText("Similar Note 1")).toBeInTheDocument();
         expect(await screen.findByText("Similar Note 2")).toBeInTheDocument();
-        expect(await screen.findByText("0.95")).toBeInTheDocument();
-        expect(await screen.findByText("0.85")).toBeInTheDocument();
+        expect(await screen.findByText("95%")).toBeInTheDocument();
+        expect(await screen.findByText("85%")).toBeInTheDocument();
     });
 
     test("hides content when collapsed", async () => {
