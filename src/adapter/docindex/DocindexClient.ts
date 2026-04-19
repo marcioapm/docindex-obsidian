@@ -156,6 +156,8 @@ function toDomainHit(wire: DocindexHitWire): DocindexHit {
         headingPath,
         snippet: wire.snippet,
         score: wire.score,
+        scoreRrf: wire.score_rrf,
+        scoreNormalized: wire.score_normalized,
         chunkId: String(wire.chunk_id),
     };
 }
@@ -171,6 +173,8 @@ function isHitWire(v: unknown): v is DocindexHitWire {
     if (typeof v.snippet !== "string") return false;
     if (typeof v.score !== "number") return false;
     if (typeof v.chunk_id !== "string" && typeof v.chunk_id !== "number") return false;
+    if (v.score_rrf !== undefined && typeof v.score_rrf !== "number") return false;
+    if (v.score_normalized !== undefined && typeof v.score_normalized !== "number") return false;
     if (v.heading_path !== null && v.heading_path !== undefined) {
         if (typeof v.heading_path === "string") {
             // OK
