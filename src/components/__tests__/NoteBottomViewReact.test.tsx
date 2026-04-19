@@ -55,6 +55,8 @@ describe("SimilarNotesViewReact", () => {
         mockWorkspace = {
             getLeaf: vi.fn().mockReturnValue(mockLeaf),
             openLinkText: mockOpenLinkText,
+            on: vi.fn().mockReturnValue({}),
+            offref: vi.fn(),
         };
         currentFile = createMockTFile("current-file.md");
         bottomViewModelSubject$ = new BehaviorSubject({

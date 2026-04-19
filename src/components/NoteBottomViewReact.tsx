@@ -296,9 +296,34 @@ const NoteBottomViewReact: React.FC<NoteBottomViewProps> = ({
         "title" | "path" | "smart"
     >("title");
 
+    // Clear stale rows the instant Obsidian focuses a different file so the
+    // user never sees last-note's hits attached to this-note's title. The
+    // new hits arrive through the view-model subject a moment later.
+    useEffect(() => {
+        let lastPath = leaf.file?.path ?? null;
+        const handler = () => {
+            const currentPath = leaf.file?.path ?? null;
+            if (currentPath !== lastPath) {
+                lastPath = currentPath;
+                setSimilarNotes([]);
+            }
+        };
+        const activeRef = workspace.on("active-leaf-change", handler);
+        const openRef = workspace.on("file-open", handler);
+        return () => {
+            workspace.offref(activeRef);
+            workspace.offref(openRef);
+        };
+    }, [workspace, leaf]);
+
     useEffect(() => {
         const sub = bottomViewModelSubject$.subscribe((model: NoteBottomViewModel) => {
-            if (leaf.file !== model.currentFile) {
+            // Compare by path — TFile objects can be replaced across renames
+            // and stale responses from the previous file must not render
+            // under the current file's header.
+            const currentPath = leaf.file?.path ?? null;
+            const modelPath = model.currentFile?.path ?? null;
+            if (currentPath !== modelPath) {
                 return;
             }
 
@@ -309,7 +334,7 @@ const NoteBottomViewReact: React.FC<NoteBottomViewProps> = ({
             setNoteDisplayMode(model.noteDisplayMode);
         });
         return () => sub.unsubscribe();
-    }, [bottomViewModelSubject$, leaf.file, viewType]);
+    }, [bottomViewModelSubject$, leaf, viewType, workspace]);
 
     const openNote = (file: TFile, newTab = false) => {
         workspace.openLinkText(file.path, "", newTab);
