@@ -19,6 +19,15 @@ export class SimilarNote {
          * relevant heading instead of the top. Empty array = no heading,
          * e.g. plain `.txt` files or notes without ATX headings.
          */
-        public readonly headingPath: string[] = []
+        public readonly headingPath: string[] = [],
+        /**
+         * Stable identifier of the top-scoring chunk, used as a React
+         * key in list views. Ensures row identity tracks the backing
+         * chunk rather than the path — two different queries that both
+         * surface `foo.md` get different keys and so don't reuse stale
+         * DOM state like an expanded preview. Empty string = unknown
+         * (legacy or non-remote providers).
+         */
+        public readonly chunkId: string = ""
     ) {}
 }

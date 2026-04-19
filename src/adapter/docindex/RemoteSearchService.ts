@@ -86,7 +86,8 @@ function groupHitsByPath(hits: DocindexHit[], sourceChunk: string): SimilarNote[
             primary.snippet,
             sourceChunk,
             extras,
-            primary.headingPath
+            primary.headingPath,
+            primary.chunkId
         )
     );
 }

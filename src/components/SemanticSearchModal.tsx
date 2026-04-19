@@ -51,10 +51,12 @@ interface SearchResultItemProps {
     note: SimilarNote;
     file: TFile | null;
     isSelected: boolean;
+    isHovered: boolean;
     scrollOnSelect: boolean;
     noteDisplayMode: "title" | "path" | "smart";
     allFiles: TFile[];
-    onSelect: () => void;
+    onHover: () => void;
+    onLeaveHover: () => void;
     onOpen: (newTab: boolean) => void;
     onInsertLink: () => void;
 }
@@ -63,10 +65,12 @@ const SearchResultItem: React.FC<SearchResultItemProps> = ({
     note,
     file,
     isSelected,
+    isHovered,
     scrollOnSelect,
     noteDisplayMode,
     allFiles,
-    onSelect,
+    onHover,
+    onLeaveHover,
     onOpen,
     onInsertLink,
 }) => {
@@ -94,12 +98,21 @@ const SearchResultItem: React.FC<SearchResultItemProps> = ({
         ? getNoteDisplayText(file, note.title, { noteDisplayMode }, allFiles)
         : note.title;
 
+    // Two distinct states: `.is-selected` tracks keyboard focus (what Enter
+    // acts on); `.is-hovered` tracks the mouse cursor. Keeping them separate
+    // avoids the multi-row highlight you used to see when the user hovered
+    // after having arrow-keyed to a different row.
+    const classes = ["suggestion-item", "mod-complex"];
+    if (isSelected) classes.push("is-selected");
+    if (isHovered) classes.push("is-hovered");
+
     return (
         <div
             ref={itemRef}
-            className={`suggestion-item mod-complex ${isSelected ? "is-selected" : ""}`}
+            className={classes.join(" ")}
             onClick={handleClick}
-            onMouseEnter={onSelect}
+            onMouseMove={onHover}
+            onMouseLeave={onLeaveHover}
         >
             <div className="suggestion-content">
                 <div className="suggestion-title">{displayText}</div>
@@ -127,20 +140,15 @@ function useSemanticSearch(textSearchService: TextSearchServiceLike) {
     const [isSearching, setIsSearching] = useState(false);
     const [tokenWarning, setTokenWarning] = useState<string | null>(null);
     // Tracks the source of the last selectedIndex change. Only "keyboard"
-    // triggers auto-scroll — initial render, new search results ("reset"),
-    // and mouse hover ("mouse") must never pull the viewport around.
+    // triggers auto-scroll — initial render and new search results ("reset")
+    // must never pull the viewport around.
     const [selectionSource, setSelectionSource] =
-        useState<"keyboard" | "mouse" | "reset">("reset");
+        useState<"keyboard" | "reset">("reset");
     const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
     const selectByKeyboard = useCallback((updater: (prev: number) => number) => {
         setSelectionSource("keyboard");
         setSelectedIndex(updater);
-    }, []);
-
-    const selectByMouse = useCallback((index: number) => {
-        setSelectionSource("mouse");
-        setSelectedIndex(index);
     }, []);
 
     const performSearch = useCallback(
@@ -190,7 +198,6 @@ function useSemanticSearch(textSearchService: TextSearchServiceLike) {
         results,
         selectedIndex,
         selectByKeyboard,
-        selectByMouse,
         selectionSource,
         isSearching,
         tokenWarning,
@@ -209,12 +216,18 @@ const SemanticSearchContent: React.FC<SemanticSearchContentProps> = ({
         results,
         selectedIndex,
         selectByKeyboard,
-        selectByMouse,
         selectionSource,
         isSearching,
         tokenWarning,
     } = useSemanticSearch(textSearchService);
     const inputRef = useRef<HTMLInputElement>(null);
+    // Hover is UI-only state, separate from keyboard selection. Reset to
+    // null when results change so a stale hover doesn't highlight the row
+    // that happens to land under the cursor after re-render.
+    const [hoveredIndex, setHoveredIndex] = useState<number | null>(null);
+    useEffect(() => {
+        setHoveredIndex(null);
+    }, [results]);
 
     useEffect(() => {
         inputRef.current?.focus();
@@ -326,16 +339,23 @@ const SemanticSearchContent: React.FC<SemanticSearchContentProps> = ({
                 )}
                 {results.map((note, index) => {
                     const file = app.vault.getAbstractFileByPath(note.path) as TFile | null;
+                    // Stable identity: prefer the chunk id (globally unique per
+                    // hit) so re-queries that surface the same path don't reuse
+                    // DOM state. Falls back to path for legacy providers that
+                    // don't supply chunkId.
+                    const rowKey = note.chunkId || note.path;
                     return (
                         <SearchResultItem
-                            key={note.path}
+                            key={rowKey}
                             note={note}
                             file={file}
                             isSelected={index === selectedIndex}
+                            isHovered={index === hoveredIndex}
                             scrollOnSelect={selectionSource === "keyboard"}
                             noteDisplayMode={noteDisplayMode}
                             allFiles={allFiles}
-                            onSelect={() => selectByMouse(index)}
+                            onHover={() => setHoveredIndex(index)}
+                            onLeaveHover={() => setHoveredIndex((h) => (h === index ? null : h))}
                             onOpen={(newTab) => openNote(index, newTab)}
                             onInsertLink={() => insertLink(index)}
                         />
