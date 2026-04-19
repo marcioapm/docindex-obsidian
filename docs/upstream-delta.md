@@ -25,12 +25,28 @@ Only the UI surface that makes sense for a remote-only client:
 Core `docindex-server` adapter:
 
 - `src/adapter/docindex/DocindexClient.ts` — thin `requestUrl` wrapper with runtime response validation and narrowed error kinds (`network`, `unauthorized`, `server`, `malformed`, `not-configured`).
-- `src/adapter/docindex/RemoteSearchService.ts` — the only search provider now. Implements `findSimilarNotes(note, limit)`, `findSimilarNotesFromText(text, limit)`, `checkTokenLimit(text)`. Owns its own `TextSearchResult` shape. Converts `DocindexHit` → `SimilarNote`.
-- `src/adapter/docindex/types.ts` — wire types (snake_case) + domain types (camelCase) + `DocindexSettings` defaults.
+- `src/adapter/docindex/RemoteSearchService.ts` — the only search provider now. Implements `findSimilarNotes(note, limit)`, `findSimilarNotesFromText(text, limit)`, `checkTokenLimit(text)`. Owns its own `TextSearchResult` shape. Converts `DocindexHit` → `SimilarNote`, grouping multi-chunk hits per path (primary + `additionalChunks`).
+- `src/adapter/docindex/types.ts` — wire types (snake_case) + domain types (camelCase) + `DocindexSettings` defaults. Includes optional `score_rrf` / `score_normalized` / `scoreRrf` / `scoreNormalized` hit fields for v0.3+ servers; `getDisplayScore()` helper falls back to `score` when absent so old servers keep working.
 - `src/adapter/docindex/index.ts` — barrel.
-- `src/adapter/docindex/__tests__/DocindexClient.test.ts` — 12 unit tests covering the full client surface.
-- `src/components/DocindexSettingsSection.tsx` — "docindex (remote search)" group in the settings tab (enabled toggle, backend URL, bearer token masked, result limit, Test connection button calling `GET /health`).
+- `src/adapter/docindex/__tests__/DocindexClient.test.ts` — 15 unit tests covering the full client surface, including the relevance-threshold filter + old-server fallback.
+- `src/components/DocindexSettingsSection.tsx` — "docindex (remote search)" group in the settings tab (enabled toggle, backend URL, bearer token masked, result limit, **relevance threshold slider** (0..1, step 0.05, default 0.40), Test connection button calling `GET /health`).
 - `src/__tests__/main.test.ts` — source-level smoke test asserting `main.ts` never re-imports a local-pipeline module.
+
+## Scoring + UI deltas (2026-04)
+
+End-to-end scoring overhaul in coordination with `docindex-server` v0.3:
+
+- **`score_normalized`** — backend computes a query-independent 0..1 display score (`W_VEC·branch_norm(v_rank,K) + W_BM25·branch_norm(b_rank,K)` with default `K=10, W_VEC=0.55, W_BM25=0.45`); the plugin consumes it via `getDisplayScore(hit)` and filters hits below `settings.relevanceThreshold` (default `0.40`) in `DocindexClient.post()` before returning to callers. Old servers without the field fall back to `hit.score` so the threshold still does something useful.
+- **`score_rrf`** — the raw RRF fusion score the server ranks on, plumbed through `DocindexHit.scoreRrf` for future diagnostics.
+- **Sidebar fixes** (`NoteBottomViewReact.tsx`):
+  - dedupe hits by path via `groupHitsByPath` in `RemoteSearchService`; extra chunks land in `SimilarNote.additionalChunks` and render as sub-rows under the expanded primary row.
+  - clear rows on `workspace.on('active-leaf-change' | 'file-open')` so switching files never shows the previous note's hits attached to the new title.
+  - race guard compares `TFile.path` (not object identity) to survive rename events that replace the TFile instance.
+  - row click uses `openLinkText(path + "#" + deepestHeading, ...)` when `hit.headingPath` is non-empty — the opened note scrolls to the matched section.
+- **Modal fixes** (`SemanticSearchModal.tsx`):
+  - auto-scroll only on keyboard navigation (`selectionSource === "keyboard"`); new search results reset the source to `"reset"` so the viewport isn't yanked as the user keeps typing.
+  - split the combined highlight into `.is-selected` (keyboard, what Enter acts on) and `.is-hovered` (mouse); hover no longer clobbers the keyboard selection.
+  - row keys are now `SimilarNote.chunkId` (plumbed from `DocindexHit.chunkId`) so the same path across different queries gets a fresh DOM identity.
 
 ## What the fork deleted
 
