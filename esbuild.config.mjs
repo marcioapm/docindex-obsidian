@@ -4,9 +4,6 @@ import inlineWorkerPlugin from "esbuild-plugin-inline-worker";
 import { polyfillNode } from "esbuild-plugin-polyfill-node";
 import process from "node:process";
 
-// Check if we should build workers only (for tests)
-const buildWorkersOnly = process.argv[2] === "workers-only";
-
 const prod = process.argv[2] === "production";
 
 const polyfillPlugin = polyfillNode({
@@ -40,25 +37,6 @@ const buildOptions = {
             plugins: [polyfillPlugin],
         }),
     ],
-};
-
-// Worker build configuration for tests
-const workerBuildOptions = {
-    entryPoints: [
-        "src/domain/service/transformers.worker.ts",
-        "src/adapter/orama/orama.worker.ts",
-    ],
-    bundle: true,
-    outdir: "public",
-    format: "iife",
-    platform: "browser",
-    target: "es2020",
-    minify: true,
-    define: {
-        __IS_TEST__: "true", // Worker-only build is test environment
-    },
-    external: ["node:worker_threads", ...builtins],
-    plugins: [polyfillPlugin],
 };
 
 // Helper function to analyze bundle size from metafile
@@ -111,11 +89,7 @@ async function analyzeBundle(metafile) {
 }
 
 // Decide which build to perform based on arguments
-if (buildWorkersOnly) {
-    // Build workers only (for tests)
-    console.log("Building workers only for tests...");
-    esbuild.build(workerBuildOptions).catch(() => process.exit(1));
-} else if (prod) {
+if (prod) {
     // Production build
     console.log("Building for production with bundle analysis...");
     const result = await esbuild.build(buildOptions);
