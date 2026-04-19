@@ -130,6 +130,7 @@ export class SimilarNoteCoordinator {
                 similarity: similarNote.similarity,
                 preview: similarNote.similarChunk,
                 sourceChunk: showSourceChunk ? similarNote.sourceChunk : undefined,
+                additionalChunks: similarNote.additionalChunks,
                 path: similarNote.path,
             }))
             .filter((vm) => {

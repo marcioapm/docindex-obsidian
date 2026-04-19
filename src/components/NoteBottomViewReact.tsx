@@ -10,6 +10,12 @@ export interface SimilarNoteEntry {
     similarity: number;
     preview: string;
     sourceChunk?: string;
+    /**
+     * Extra chunk snippets from the same note. When non-empty, the
+     * expanded preview shows them beneath the primary snippet so the
+     * user can see everywhere the note matched.
+     */
+    additionalChunks?: string[];
 }
 
 export interface NoteBottomViewModel {
@@ -67,10 +73,12 @@ const SimilarNotesHeader: React.FC<SimilarNotesHeaderProps> = ({
 const SearchResultPreview = ({
     preview,
     sourceChunk,
+    additionalChunks,
     isOpen,
 }: {
     preview: string;
     sourceChunk?: string;
+    additionalChunks?: string[];
     isOpen: boolean;
 }) => {
     // CSS-only animation approach, no need for React Transition Group
@@ -81,6 +89,14 @@ const SearchResultPreview = ({
             }`}
         >
             <div className="search-result-file-match tappable">{preview}</div>
+            {additionalChunks?.map((chunk, idx) => (
+                <div
+                    key={`chunk-${idx}`}
+                    className="search-result-file-match tappable"
+                >
+                    {chunk}
+                </div>
+            ))}
             {sourceChunk && (
                 <div className="search-result-file-match tappable">
                     <div style={{ fontWeight: "bold", textAlign: "center" }}>
@@ -219,6 +235,7 @@ const SearchResult = ({
                 <SearchResultPreview
                     preview={note.preview}
                     sourceChunk={note.sourceChunk}
+                    additionalChunks={note.additionalChunks}
                     isOpen={!isAnimating}
                 />
             )}

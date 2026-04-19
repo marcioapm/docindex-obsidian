@@ -29,7 +29,7 @@ export class RemoteSearchService {
         try {
             const response = await this.client.search(text, limit);
             return {
-                similarNotes: response.hits.slice(0, limit).map((h) => hitToSimilarNote(h, text)),
+                similarNotes: groupHitsByPath(response.hits, text).slice(0, limit),
                 // Remote backend handles tokenization itself; surface empty stats.
                 tokenCount: 0,
                 maxTokens: 0,
@@ -51,16 +51,41 @@ export class RemoteSearchService {
         if (!note.path) return [];
         try {
             const response = await this.client.similar(note.path, limit);
-            return response.hits
-                .filter((h) => h.path !== note.path)
-                .slice(0, limit)
-                .map((h) => hitToSimilarNote(h, note.content ?? ""));
+            const filtered = response.hits.filter((h) => h.path !== note.path);
+            return groupHitsByPath(filtered, note.content ?? "").slice(0, limit);
         } catch {
             return [];
         }
     }
 }
 
-function hitToSimilarNote(hit: DocindexHit, sourceChunk: string): SimilarNote {
-    return new SimilarNote(hit.title || hit.path, hit.path, hit.score, hit.snippet, sourceChunk);
+/**
+ * Collapses per-chunk hits into one entry per path.
+ *
+ * The backend ranks chunks independently, so a single note can show up
+ * multiple times in a single response. The sidebar is a note-list, not a
+ * chunk-list — we surface the top-scoring chunk as the primary preview and
+ * stash the others in `additionalChunks` so the UI can render them as
+ * expandable sub-rows. Input order is preserved for top-hit priority.
+ */
+function groupHitsByPath(hits: DocindexHit[], sourceChunk: string): SimilarNote[] {
+    const byPath = new Map<string, { primary: DocindexHit; extras: string[] }>();
+    for (const hit of hits) {
+        const existing = byPath.get(hit.path);
+        if (existing === undefined) {
+            byPath.set(hit.path, { primary: hit, extras: [] });
+        } else if (hit.snippet && hit.snippet !== existing.primary.snippet) {
+            existing.extras.push(hit.snippet);
+        }
+    }
+    return Array.from(byPath.values()).map(({ primary, extras }) =>
+        new SimilarNote(
+            primary.title || primary.path,
+            primary.path,
+            primary.score,
+            primary.snippet,
+            sourceChunk,
+            extras
+        )
+    );
 }
