@@ -137,7 +137,6 @@ export class DocindexClient {
     }
 
     private notify(message: string): void {
-        // Single place where user-visible errors are raised.
         new Notice(message);
     }
 }
@@ -194,11 +193,9 @@ function isHitWire(v: unknown): v is DocindexHitWire {
     if (v.score_rrf !== undefined && typeof v.score_rrf !== "number") return false;
     if (v.score_normalized !== undefined && typeof v.score_normalized !== "number") return false;
     if (v.heading_path !== null && v.heading_path !== undefined) {
-        if (typeof v.heading_path === "string") {
-            // OK
-        } else if (Array.isArray(v.heading_path)) {
+        if (Array.isArray(v.heading_path)) {
             if (!v.heading_path.every((x) => typeof x === "string")) return false;
-        } else {
+        } else if (typeof v.heading_path !== "string") {
             return false;
         }
     }

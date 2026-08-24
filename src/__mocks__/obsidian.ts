@@ -232,9 +232,7 @@ export class EditorSuggest<T> {
     app: unknown;
     context: unknown = null;
     constructor(app: unknown) { this.app = app; }
-    // eslint-disable-next-line @typescript-eslint/no-unused-vars
     onTrigger(_cursor: unknown, _editor: unknown, _file: unknown): unknown { return null; }
-    // eslint-disable-next-line @typescript-eslint/no-unused-vars
     getSuggestions(_context: unknown): unknown { return []; }
     renderSuggestion(_item: T, _el: HTMLElement): void { void 0; }
     selectSuggestion(_item: T, _evt: unknown): void { void 0; }

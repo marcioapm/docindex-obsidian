@@ -1,6 +1,6 @@
 import { getNoteDisplayText } from "@/utils/displayUtils";
-import type { App, TFile } from "obsidian";
-import { MarkdownView, Modal } from "obsidian";
+import type { App } from "obsidian";
+import { MarkdownView, Modal, TFile } from "obsidian";
 import log from "loglevel";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createRoot, type Root } from "react-dom/client";
@@ -99,10 +99,9 @@ const SearchResultItem: React.FC<SearchResultItemProps> = ({
         ? getNoteDisplayText(file, note.title, { noteDisplayMode }, allFiles)
         : note.title;
 
-    // Two distinct states: `.is-selected` tracks keyboard focus (what Enter
-    // acts on); `.is-hovered` tracks the mouse cursor. Keeping them separate
-    // avoids the multi-row highlight you used to see when the user hovered
-    // after having arrow-keyed to a different row.
+    // `.is-selected` tracks keyboard focus; `.is-hovered` tracks the mouse cursor.
+    // Separate classes prevent a stale hover highlight when the keyboard selection
+    // and mouse position differ.
     const classes = ["suggestion-item", "mod-complex"];
     if (isSelected) classes.push("is-selected");
     if (isHovered) classes.push("is-hovered");
@@ -234,9 +233,7 @@ const SemanticSearchContent: React.FC<SemanticSearchContentProps> = ({
     const resultFiles = useMemo(() => {
         return results.map((note) => {
             const file = app.vault.getAbstractFileByPath(note.path);
-            return file instanceof app.vault.adapter.constructor
-                ? null
-                : (file as TFile | null);
+            return file instanceof TFile ? file : null;
         });
     }, [results, app.vault]);
 
@@ -336,14 +333,9 @@ const SemanticSearchContent: React.FC<SemanticSearchContentProps> = ({
                     <div className="prompt-empty-state">No similar notes found</div>
                 )}
                 {results.map((note, index) => {
-                    // resultFiles[index] resolves the same path as note.path
-                    // and is derived from the same results array — index alignment
-                    // is guaranteed. Avoids a redundant vault lookup per row.
+                    // resultFiles is co-indexed with results; avoids a per-row vault lookup.
                     const file = resultFiles[index] ?? null;
-                    // Stable identity: prefer the chunk id (globally unique per
-                    // hit) so re-queries that surface the same path don't reuse
-                    // DOM state. Falls back to path for legacy providers that
-                    // don't supply chunkId.
+                    // Prefer chunkId (unique per hit) so same-path re-queries get fresh DOM.
                     const rowKey = note.chunkId || note.path;
                     return (
                         <SearchResultItem
@@ -371,33 +363,27 @@ const SemanticSearchContent: React.FC<SemanticSearchContentProps> = ({
 
 export class SemanticSearchModal extends Modal {
     private root: Root | null = null;
-    private textSearchService: TextSearchServiceLike;
-    private noteDisplayMode: "title" | "path" | "smart";
 
     constructor(
         app: App,
-        textSearchService: TextSearchServiceLike,
-        noteDisplayMode: "title" | "path" | "smart"
+        private readonly textSearchService: TextSearchServiceLike,
+        private readonly noteDisplayMode: "title" | "path" | "smart"
     ) {
         super(app);
-        this.textSearchService = textSearchService;
-        this.noteDisplayMode = noteDisplayMode;
     }
 
     onOpen() {
         const { modalEl } = this;
 
-        // Remove modal class and add prompt class to match Quick Switcher styling
+        // Style the modal as a Quick Switcher-style prompt.
         modalEl.removeClass("modal");
         modalEl.addClass("prompt");
         modalEl.addClass("semantic-search-modal");
 
-        // Remove unnecessary modal elements to match Quick Switcher structure
         modalEl.querySelector(".modal-close-button")?.remove();
         modalEl.querySelector(".modal-header")?.remove();
         modalEl.querySelector(".modal-content")?.remove();
 
-        // Render directly to modalEl (like Quick Switcher)
         this.root = createRoot(modalEl);
         this.root.render(
             <SemanticSearchContent

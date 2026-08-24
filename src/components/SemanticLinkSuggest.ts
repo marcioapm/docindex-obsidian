@@ -3,7 +3,6 @@ import {
     EditorSuggest,
     Notice,
     type App,
-    type Debouncer,
     type Editor,
     type EditorPosition,
     type EditorSuggestContext,
@@ -44,10 +43,10 @@ export class SemanticLinkSuggest extends EditorSuggest<SimilarNote> {
      * `resolve` is never invoked, so its promise stays pending — returning `[]`
      * would cause Obsidian to close the popup during fast typing.
      */
-    private readonly debouncedSearch: Debouncer<
-        [EditorSuggestContext, (suggestions: SimilarNote[]) => void],
-        void
-    >;
+    private readonly debouncedSearch: (
+        context: EditorSuggestContext,
+        cb: (suggestions: SimilarNote[]) => void
+    ) => void;
 
     constructor(
         app: App,
@@ -57,7 +56,14 @@ export class SemanticLinkSuggest extends EditorSuggest<SimilarNote> {
         super(app);
         this.debouncedSearch = debounce(
             (context: EditorSuggestContext, cb: (suggestions: SimilarNote[]) => void) => {
-                void this.runSearch(context.query).then(cb);
+                this.textSearchService
+                    .findSimilarNotesFromText(context.query)
+                    .then((r) => r.similarNotes)
+                    .catch((err: unknown) => {
+                        log.error("[SemanticLinkSuggest] search failed", err);
+                        return [] as SimilarNote[];
+                    })
+                    .then(cb);
             },
             DEBOUNCE_MS,
             true
@@ -86,22 +92,9 @@ export class SemanticLinkSuggest extends EditorSuggest<SimilarNote> {
         if (context.query.length < MIN_SEARCH_LENGTH) {
             return Promise.resolve([]);
         }
-        // The debounce drops every call but the last; a superseded call's
-        // `resolve` is never invoked, so its promise stays pending and Obsidian
-        // keeps showing the current suggestions until fresh ones arrive.
         return new Promise((resolve) => {
             this.debouncedSearch(context, resolve);
         });
-    }
-
-    private async runSearch(query: string): Promise<SimilarNote[]> {
-        try {
-            const result = await this.textSearchService.findSimilarNotesFromText(query);
-            return result.similarNotes;
-        } catch (error) {
-            log.error("[SemanticLinkSuggest] search failed", error);
-            return [];
-        }
     }
 
     renderSuggestion(note: SimilarNote, el: HTMLElement): void {
@@ -109,7 +102,6 @@ export class SemanticLinkSuggest extends EditorSuggest<SimilarNote> {
         const content = el.createDiv({ cls: "suggestion-content" });
         content.createDiv({ cls: "suggestion-title", text: note.title });
         const aux = el.createDiv({ cls: "suggestion-aux" });
-        // Score formatted as percentage, matching SemanticSearchModal.
         aux.createSpan({
             cls: "suggestion-flair semantic-search-score",
             text: `${Math.round(note.similarity * 100)}%`,
