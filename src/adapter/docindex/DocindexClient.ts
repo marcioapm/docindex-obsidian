@@ -67,6 +67,9 @@ export class DocindexClient {
     }
 
     private async post(endpoint: string, body: Record<string, unknown>): Promise<DocindexSearchResponse> {
+        if (this.disabledForSession) {
+            throw new DocindexError("not-configured", "provider disabled for this session (malformed response)");
+        }
         const settings = this.getSettings();
         if (!settings.enabled) {
             throw new DocindexError("not-configured", "docindex is disabled");

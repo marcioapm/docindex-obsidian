@@ -166,6 +166,16 @@ describe("DocindexClient — request shape", () => {
         const res = await client.search("q");
         expect(res.hits).toHaveLength(1);
     });
+
+    it("sends the path and limit keys in the /similar request body with the Authorization header", async () => {
+        const requestFn = vi.fn().mockResolvedValue({ status: 200, headers: {}, json: { hits: [] } });
+        const { client } = makeClient({}, requestFn);
+        await client.similar("notes/foo.md", 7);
+        const call = requestFn.mock.calls[0][0];
+        expect(call.url).toContain("/similar");
+        expect(call.headers.Authorization).toBe("Bearer test-token");
+        expect(JSON.parse(call.body)).toEqual({ path: "notes/foo.md", limit: 7 });
+    });
 });
 
 describe("DocindexClient — auth failures", () => {
@@ -207,6 +217,17 @@ describe("DocindexClient — malformed responses", () => {
         expect(noticeMessages.some((m) => m.includes("malformed"))).toBe(true);
         // Subsequent calls should short-circuit via isAvailable == false.
         expect(client.isAvailable()).toBe(false);
+    });
+
+    it("short-circuits after a malformed disable: second call rejects without a new network request", async () => {
+        const requestFn = vi.fn().mockResolvedValue({ status: 200, headers: {}, json: { not: "a hit list" } });
+        const { client } = makeClient({}, requestFn);
+        // First call: triggers the malformed path and sets disabledForSession.
+        await expect(client.search("q")).rejects.toMatchObject({ kind: "malformed" });
+        // Second call must reject immediately (kind: not-configured) and must
+        // NOT issue a second HTTP request — the call count stays at 1.
+        await expect(client.search("q")).rejects.toMatchObject({ kind: "not-configured" });
+        expect(requestFn).toHaveBeenCalledTimes(1);
     });
 
     it("reset() re-enables after a malformed-disable", async () => {
