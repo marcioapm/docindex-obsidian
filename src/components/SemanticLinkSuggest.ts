@@ -1,6 +1,7 @@
 import {
     debounce,
     EditorSuggest,
+    Notice,
     type App,
     type Debouncer,
     type Editor,
@@ -121,7 +122,10 @@ export class SemanticLinkSuggest extends EditorSuggest<SimilarNote> {
 
         const sourcePath = context.file?.path ?? "";
         const wikilink = resolveWikilink(this.app, note.path, sourcePath);
-        if (!wikilink) return;
+        if (!wikilink) {
+            new Notice(`docindex: note not found in this vault — "${note.path}"`);
+            return;
+        }
 
         const inserted = `${wikilink} `;
         context.editor.replaceRange(inserted, context.start, context.end);
