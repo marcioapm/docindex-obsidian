@@ -34,7 +34,7 @@ beforeEach(() => {
     noticeMessages.length = 0;
 });
 
-describe("DocindexClient", () => {
+describe("DocindexClient — request shape", () => {
     it("parses a valid /search response into camelCase hits", async () => {
         const requestFn = vi.fn().mockResolvedValue({
             status: 200,
@@ -116,51 +116,6 @@ describe("DocindexClient", () => {
         expect(res.hits[0].headingPath).toEqual([]);
     });
 
-    it("surfaces a Notice and rejects on 401", async () => {
-        const requestFn = vi.fn().mockResolvedValue({ status: 401, headers: {}, text: "" });
-        const { client } = makeClient({}, requestFn);
-        await expect(client.search("q")).rejects.toMatchObject({ kind: "unauthorized" });
-        expect(noticeMessages).toContain("docindex: bearer token missing or wrong");
-    });
-
-    it("surfaces a Notice and rejects on 5xx", async () => {
-        const requestFn = vi.fn().mockResolvedValue({ status: 503, headers: {}, text: "" });
-        const { client } = makeClient({}, requestFn);
-        await expect(client.search("q")).rejects.toMatchObject({ kind: "server", status: 503 });
-        expect(noticeMessages).toContain("docindex: server error 503");
-    });
-
-    it("surfaces a Notice and rejects on network failure", async () => {
-        const requestFn = vi.fn().mockRejectedValue(new Error("net down"));
-        const { client } = makeClient({}, requestFn);
-        await expect(client.search("q")).rejects.toMatchObject({ kind: "network" });
-        expect(noticeMessages).toContain("docindex: backend unreachable (Tailscale?)");
-    });
-
-    it("surfaces a Notice and disables the provider on malformed JSON", async () => {
-        const requestFn = vi.fn().mockResolvedValue({ status: 200, headers: {}, json: { not: "a hit list" } });
-        const { client } = makeClient({}, requestFn);
-        await expect(client.search("q")).rejects.toMatchObject({ kind: "malformed" });
-        expect(noticeMessages.some((m) => m.includes("malformed"))).toBe(true);
-        // Subsequent calls should short-circuit via isAvailable == false.
-        expect(client.isAvailable()).toBe(false);
-    });
-
-    it("reset() re-enables after a malformed-disable", async () => {
-        const requestFn = vi.fn().mockResolvedValue({ status: 200, headers: {}, json: { bad: true } });
-        const { client } = makeClient({}, requestFn);
-        await expect(client.search("q")).rejects.toBeDefined();
-        expect(client.isAvailable()).toBe(false);
-        client.reset();
-        expect(client.isAvailable()).toBe(true);
-    });
-
-    it("is unavailable when disabled, URL empty, or token empty", () => {
-        expect(makeClient({ enabled: false }).client.isAvailable()).toBe(false);
-        expect(makeClient({ backendUrl: "   " }).client.isAvailable()).toBe(false);
-        expect(makeClient({ bearerToken: "" }).client.isAvailable()).toBe(false);
-    });
-
     it("strips trailing slashes from the backend URL", async () => {
         const requestFn = vi.fn().mockResolvedValue({ status: 200, headers: {}, json: { hits: [] } });
         const { client } = makeClient({ backendUrl: "http://host:1/////" }, requestFn);
@@ -211,7 +166,60 @@ describe("DocindexClient", () => {
         const res = await client.search("q");
         expect(res.hits).toHaveLength(1);
     });
+});
 
+describe("DocindexClient — auth failures", () => {
+    it("surfaces a Notice and rejects on 401", async () => {
+        const requestFn = vi.fn().mockResolvedValue({ status: 401, headers: {}, text: "" });
+        const { client } = makeClient({}, requestFn);
+        await expect(client.search("q")).rejects.toMatchObject({ kind: "unauthorized" });
+        expect(noticeMessages).toContain("docindex: bearer token missing or wrong");
+    });
+
+    it("is unavailable when disabled, URL empty, or token empty", () => {
+        expect(makeClient({ enabled: false }).client.isAvailable()).toBe(false);
+        expect(makeClient({ backendUrl: "   " }).client.isAvailable()).toBe(false);
+        expect(makeClient({ bearerToken: "" }).client.isAvailable()).toBe(false);
+    });
+});
+
+describe("DocindexClient — server errors", () => {
+    it("surfaces a Notice and rejects on 5xx", async () => {
+        const requestFn = vi.fn().mockResolvedValue({ status: 503, headers: {}, text: "" });
+        const { client } = makeClient({}, requestFn);
+        await expect(client.search("q")).rejects.toMatchObject({ kind: "server", status: 503 });
+        expect(noticeMessages).toContain("docindex: server error 503");
+    });
+
+    it("surfaces a Notice and rejects on network failure", async () => {
+        const requestFn = vi.fn().mockRejectedValue(new Error("net down"));
+        const { client } = makeClient({}, requestFn);
+        await expect(client.search("q")).rejects.toMatchObject({ kind: "network" });
+        expect(noticeMessages).toContain("docindex: backend unreachable (Tailscale?)");
+    });
+});
+
+describe("DocindexClient — malformed responses", () => {
+    it("surfaces a Notice and disables the provider on malformed JSON", async () => {
+        const requestFn = vi.fn().mockResolvedValue({ status: 200, headers: {}, json: { not: "a hit list" } });
+        const { client } = makeClient({}, requestFn);
+        await expect(client.search("q")).rejects.toMatchObject({ kind: "malformed" });
+        expect(noticeMessages.some((m) => m.includes("malformed"))).toBe(true);
+        // Subsequent calls should short-circuit via isAvailable == false.
+        expect(client.isAvailable()).toBe(false);
+    });
+
+    it("reset() re-enables after a malformed-disable", async () => {
+        const requestFn = vi.fn().mockResolvedValue({ status: 200, headers: {}, json: { bad: true } });
+        const { client } = makeClient({}, requestFn);
+        await expect(client.search("q")).rejects.toBeDefined();
+        expect(client.isAvailable()).toBe(false);
+        client.reset();
+        expect(client.isAvailable()).toBe(true);
+    });
+});
+
+describe("DocindexClient — URL handling and relevance threshold", () => {
     it("filters hits below relevanceThreshold using score_normalized", async () => {
         const requestFn = vi.fn().mockResolvedValue({
             status: 200,

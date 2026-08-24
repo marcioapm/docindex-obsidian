@@ -221,13 +221,10 @@ const SemanticSearchContent: React.FC<SemanticSearchContentProps> = ({
         tokenWarning,
     } = useSemanticSearch(textSearchService);
     const inputRef = useRef<HTMLInputElement>(null);
-    // Hover is UI-only state, separate from keyboard selection. Reset to
-    // null when results change so a stale hover doesn't highlight the row
-    // that happens to land under the cursor after re-render.
-    const [hoveredIndex, setHoveredIndex] = useState<number | null>(null);
-    useEffect(() => {
-        setHoveredIndex(null);
-    }, [results]);
+    // Hover is UI-only state, separate from keyboard selection. Tracked by
+    // row key (chunkId || path) so it implicitly resets on every new result
+    // set — a key from a previous query won't match any row in the new list.
+    const [hoveredKey, setHoveredKey] = useState<string | null>(null);
 
     useEffect(() => {
         inputRef.current?.focus();
@@ -350,12 +347,12 @@ const SemanticSearchContent: React.FC<SemanticSearchContentProps> = ({
                             note={note}
                             file={file}
                             isSelected={index === selectedIndex}
-                            isHovered={index === hoveredIndex}
+                            isHovered={rowKey === hoveredKey}
                             scrollOnSelect={selectionSource === "keyboard"}
                             noteDisplayMode={noteDisplayMode}
                             allFiles={allFiles}
-                            onHover={() => setHoveredIndex(index)}
-                            onLeaveHover={() => setHoveredIndex((h) => (h === index ? null : h))}
+                            onHover={() => setHoveredKey(rowKey)}
+                            onLeaveHover={() => setHoveredKey((k) => (k === rowKey ? null : k))}
                             onOpen={(newTab) => openNote(index, newTab)}
                             onInsertLink={() => insertLink(index)}
                         />
