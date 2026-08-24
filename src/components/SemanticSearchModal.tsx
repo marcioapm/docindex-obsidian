@@ -1,6 +1,7 @@
 import { getNoteDisplayText } from "@/utils/displayUtils";
 import type { App, TFile } from "obsidian";
 import { MarkdownView, Modal } from "obsidian";
+import log from "loglevel";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import type { SimilarNote } from "@/domain/model/SimilarNote";
@@ -175,7 +176,7 @@ function useSemanticSearch(textSearchService: TextSearchServiceLike) {
                 setSelectionSource("reset");
                 setSelectedIndex(0);
             } catch (error) {
-                console.error("Search error:", error);
+                log.error("[SemanticSearchModal] search failed:", error);
                 setResults([]);
             } finally {
                 setIsSearching(false);
@@ -335,7 +336,10 @@ const SemanticSearchContent: React.FC<SemanticSearchContentProps> = ({
                     <div className="prompt-empty-state">No similar notes found</div>
                 )}
                 {results.map((note, index) => {
-                    const file = app.vault.getAbstractFileByPath(note.path) as TFile | null;
+                    // resultFiles[index] resolves the same path as note.path
+                    // and is derived from the same results array — index alignment
+                    // is guaranteed. Avoids a redundant vault lookup per row.
+                    const file = resultFiles[index] ?? null;
                     // Stable identity: prefer the chunk id (globally unique per
                     // hit) so re-queries that surface the same path don't reuse
                     // DOM state. Falls back to path for legacy providers that
