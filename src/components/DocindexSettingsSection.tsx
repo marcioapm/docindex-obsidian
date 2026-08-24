@@ -1,6 +1,7 @@
 import type { SettingsService } from "@/application/SettingsService";
 import { Notice, Setting, SettingGroup, requestUrl } from "obsidian";
 import type { DocindexClient } from "@/adapter/docindex";
+import { isForbiddenTrigger } from "./semanticLinkTrigger";
 
 interface DocindexSettingsSectionProps {
     containerEl: HTMLElement;
@@ -27,8 +28,8 @@ export function renderDocindexSection(props: DocindexSettingsSectionProps): void
     new Setting(containerEl)
         .setName("Enable docindex remote search")
         .setDesc(
-            "When on, semantic search and similar-notes are served by a docindex-server backend. " +
-                "When off, the upstream local provider is used."
+            "The docindex backend is required for all search. " +
+                "When off, the similar-notes sidebar and semantic-search modal return no results."
         )
         .addToggle((toggle) => {
             toggle.setValue(settings.enabled).onChange(async (value) => {
@@ -122,6 +123,10 @@ export function renderDocindexSection(props: DocindexSettingsSectionProps): void
             text.setPlaceholder(";;")
                 .setValue(settingsService.get().semanticLinkTrigger)
                 .onChange(async (value) => {
+                    if (isForbiddenTrigger(value)) {
+                        new Notice('docindex: trigger must not start with "[" (reserved for Obsidian\'s link suggester)');
+                        return;
+                    }
                     await settingsService.update({ semanticLinkTrigger: value });
                 });
             text.inputEl.style.width = "80px";

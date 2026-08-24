@@ -6,6 +6,15 @@ export interface TriggerMatch {
 }
 
 /**
+ * Returns true when `trigger` would collide with Obsidian's built-in `[[`
+ * link suggester (index 0, always wins). Used by both the settings validator
+ * and `parseTrigger` so the rule lives in one place.
+ */
+export function isForbiddenTrigger(trigger: string): boolean {
+    return trigger.startsWith("[");
+}
+
+/**
  * Parse the part of the editor line up to the cursor for the semantic-link
  * trigger. Returns the query (text after the last trigger occurrence) and the
  * trigger's start offset, or null when the feature is disabled / the trigger is
@@ -18,7 +27,7 @@ export function parseTrigger(
     lineUpToCursor: string,
     trigger: string
 ): TriggerMatch | null {
-    if (!trigger || trigger.startsWith("[")) return null;
+    if (!trigger || isForbiddenTrigger(trigger)) return null;
 
     const idx = lineUpToCursor.lastIndexOf(trigger);
     if (idx === -1) return null;
