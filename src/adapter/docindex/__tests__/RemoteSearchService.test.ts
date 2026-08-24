@@ -48,4 +48,32 @@ describe("RemoteSearchService", () => {
         const [primary] = await svc.findSimilarNotes(note);
         expect(primary.similarity).toBe(0.6);
     });
+
+    it("groupHitsByPath propagates all four media fields onto SimilarNote", async () => {
+        // Mutation: removing any of the four positional arguments (mediaType,
+        // mediaStart, mediaEnd, truncated) from the SimilarNote constructor call
+        // in groupHitsByPath causes the corresponding assertion below to fail.
+        // A text hit with default values would not distinguish removal of mediaType
+        // from the default; a pdf hit with non-default values makes each field
+        // independently load-bearing.
+        const svc = new RemoteSearchService(
+            mockClient({
+                hits: [
+                    hit({
+                        path: "scan.pdf",
+                        mediaType: "pdf",
+                        mediaStart: 2,
+                        mediaEnd: 5,
+                        truncated: true,
+                    }),
+                ],
+            })
+        );
+        const note = new Note("source.md", "source", "content", []);
+        const [result] = await svc.findSimilarNotes(note);
+        expect(result.mediaType).toBe("pdf");
+        expect(result.mediaStart).toBe(2);
+        expect(result.mediaEnd).toBe(5);
+        expect(result.truncated).toBe(true);
+    });
 });
