@@ -42,9 +42,9 @@ Only the UI surface that applies to a remote-only client:
 
 **Tests:**
 
-- `src/adapter/docindex/__tests__/DocindexClient.test.ts` — 15 unit tests split across four `describe` blocks: request shape, auth failures, server errors, malformed responses, URL handling + threshold filter.
+- `src/adapter/docindex/__tests__/DocindexClient.test.ts` — 17 unit tests split across four `describe` blocks: request shape, auth failures, server errors, malformed responses, URL handling + threshold filter.
 - `src/components/__tests__/semanticLinkTrigger.test.ts` — 9 tests for `parseTrigger`.
-- `src/components/__tests__/SemanticLinkSuggest.test.ts` — 4 tests covering getSuggestions (below-min, success, rejection) and renderSuggestion (percentage formatting).
+- `src/components/__tests__/SemanticLinkSuggest.test.ts` — 9 tests covering getSuggestions (below-min, success, rejection), renderSuggestion (percentage formatting), selectSuggestion (resolve + missing path), and onTrigger (match, absent, disabled).
 - `src/__tests__/main.test.ts` — source-level smoke test asserting `main.ts` does not import any deleted local-pipeline module; extended to assert the new suggester import.
 
 **UI fixes (from fork history):**
