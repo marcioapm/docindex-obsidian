@@ -60,4 +60,8 @@ describe("main.ts — remote-only import surface", () => {
     it("imports the remote search coordinator", () => {
         expect(source).toContain("./application/SimilarNoteCoordinator");
     });
+
+    it("imports SemanticLinkSuggest for the editor suggester", () => {
+        expect(source).toContain("./components/SemanticLinkSuggest");
+    });
 });

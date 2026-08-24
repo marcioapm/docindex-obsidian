@@ -217,3 +217,35 @@ if (typeof process !== 'undefined' && process.env.NODE_ENV === 'test') {
 }
 
 // Add any other Obsidian types/interfaces as needed for tests
+
+export class SettingGroup {
+    constructor(_containerEl: HTMLElement) { void 0; }
+    setHeading(_heading: string): this { return this; }
+}
+
+export class MarkdownView { enabled = false; }
+
+export class Plugin { id = ""; }
+
+// Minimal EditorSuggest stub — only the parts our code touches.
+export class EditorSuggest<T> {
+    app: unknown;
+    context: unknown = null;
+    constructor(app: unknown) { this.app = app; }
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
+    onTrigger(_cursor: unknown, _editor: unknown, _file: unknown): unknown { return null; }
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
+    getSuggestions(_context: unknown): unknown { return []; }
+    renderSuggestion(_item: T, _el: HTMLElement): void { void 0; }
+    selectSuggestion(_item: T, _evt: unknown): void { void 0; }
+}
+
+/** Minimal debounce stub: invokes the callback immediately (no timer). */
+export function debounce<T extends unknown[]>(
+    fn: (...args: T) => void,
+    _wait: number,
+    _immediate?: boolean
+): ((...args: T) => void) & { cancel?: () => void } {
+    return (...args: T) => fn(...args);
+}
+

@@ -41,7 +41,7 @@ export function renderDocindexSection(props: DocindexSettingsSectionProps): void
 
     new Setting(containerEl)
         .setName("Backend URL")
-        .setDesc("e.g. http://100.83.46.59:7777 (Tailscale). No trailing slash.")
+        .setDesc("e.g. http://100.64.0.1:7777 (Tailscale). No trailing slash.")
         .addText((text) => {
             text.setPlaceholder("http://100.x.y.z:7777")
                 .setValue(settings.backendUrl)
@@ -110,6 +110,21 @@ export function renderDocindexSection(props: DocindexSettingsSectionProps): void
                         },
                     });
                 });
+        });
+
+    new Setting(containerEl)
+        .setName("Semantic link trigger")
+        .setDesc(
+            'Character sequence that opens the semantic link suggester in the editor (e.g. ";;"). ' +
+                "Clear the field to disable the feature. Must not start with \"[\" (reserved for Obsidian's built-in link suggester)."
+        )
+        .addText((text) => {
+            text.setPlaceholder(";;")
+                .setValue(settingsService.get().semanticLinkTrigger)
+                .onChange(async (value) => {
+                    await settingsService.update({ semanticLinkTrigger: value });
+                });
+            text.inputEl.style.width = "80px";
         });
 
     new Setting(containerEl)

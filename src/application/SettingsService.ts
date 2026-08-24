@@ -53,6 +53,8 @@ export interface SimilarNotesSettings {
     cachedModelInfo?: CachedModelInfo; // Cached model information
     indexingDelaySeconds: number; // Wait time after file changes before indexing
     docindex: DocindexSettings; // docindex-server remote search provider config
+    /** Trigger sequence for the semantic link suggester. Empty string disables it. Default: ";;" */
+    semanticLinkTrigger: string;
 }
 
 const DEFAULT_SETTINGS: SimilarNotesSettings = {
@@ -70,6 +72,7 @@ const DEFAULT_SETTINGS: SimilarNotesSettings = {
     bottomResultCount: 5, // Default to 5 results at bottom
     indexingDelaySeconds: 1, // Default to 1 second delay
     docindex: DEFAULT_DOCINDEX_SETTINGS,
+    semanticLinkTrigger: ";;",
 };
 
 export class SettingsService {

@@ -8,12 +8,13 @@ import {
     ShowSimilarNotesCommand,
     type Command,
 } from "./commands";
+import { SemanticLinkSuggest } from "./components/SemanticLinkSuggest";
 import { SimilarNotesSettingTab } from "./components/SimilarNotesSettingTab";
 import { SimilarNotesSidebarView } from "./components/SimilarNotesSidebarView";
 import { VIEW_TYPE_SIMILAR_NOTES_SIDEBAR } from "./constants/viewTypes";
 
 /**
- * obsidian-docindex — a thin remote-only client.
+ * docindex-obsidian — a thin remote-only client.
  *
  * All indexing lives on a docindex-server backend (Tailscale-reachable). This
  * plugin:
@@ -32,7 +33,7 @@ export default class MainPlugin extends Plugin {
 
     async onload() {
         log.setDefaultLevel(log.levels.INFO);
-        log.info("Loading obsidian-docindex");
+        log.info("Loading docindex-obsidian");
 
         this.settingsService = new SettingsService(this);
         await this.settingsService.load();
@@ -76,6 +77,13 @@ export default class MainPlugin extends Plugin {
 
         this.registerCommands();
         this.registerEditorDropEvent();
+        this.registerEditorSuggest(
+            new SemanticLinkSuggest(
+                this.app,
+                this.remoteSearchService,
+                this.settingsService
+            )
+        );
     }
 
     private registerEditorDropEvent() {
@@ -152,7 +160,7 @@ export default class MainPlugin extends Plugin {
         this.app.workspace.detachLeavesOfType(
             VIEW_TYPE_SIMILAR_NOTES_SIDEBAR
         );
-        log.info("obsidian-docindex unloaded");
+        log.info("docindex-obsidian unloaded");
     }
 
     public setLogLevel(level: log.LogLevelDesc): void {
