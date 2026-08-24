@@ -2,12 +2,22 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { SimilarNote } from "@/domain/model/SimilarNote";
 import type { TextSearchResult } from "@/adapter/docindex";
 
+// Capture Notice calls for assertions.
+const noticeMessages: string[] = [];
 vi.mock("obsidian", async (importOriginal) => {
     const actual = await importOriginal<Record<string, unknown>>();
-    return { ...actual };
+    return {
+        ...actual,
+        Notice: class {
+            constructor(msg: string) {
+                noticeMessages.push(msg);
+            }
+        },
+    };
 });
 
 import { SemanticLinkSuggest, MIN_SEARCH_LENGTH } from "../SemanticLinkSuggest";
+import { TFile } from "obsidian";
 
 function makeSimilarNote(overrides: Partial<InstanceType<typeof SimilarNote>> = {}): SimilarNote {
     return new SimilarNote(
@@ -43,11 +53,29 @@ function makeSearchService(result: TextSearchResult | Error) {
     };
 }
 
+/**
+ * Build a minimal app stub that satisfies resolveWikilink's requirements.
+ * `resolvable` controls whether getAbstractFileByPath returns a TFile or null.
+ */
+function makeApp(resolvable: boolean, notePath = "notes/test.md") {
+    const file = resolvable ? new TFile(notePath) : null;
+    return {
+        vault: {
+            getAbstractFileByPath: vi.fn().mockReturnValue(file),
+        },
+        metadataCache: {
+            // Return a shortened link text (basename without extension).
+            fileToLinktext: vi.fn().mockReturnValue("test"),
+        },
+    };
+}
+
 function makeSuggest(
     trigger = ";;",
-    searchResult: TextSearchResult | Error = makeSearchResult([])
+    searchResult: TextSearchResult | Error = makeSearchResult([]),
+    appOverride?: ReturnType<typeof makeApp>
 ) {
-    const app = {};
+    const app = appOverride ?? {};
     const searchService = makeSearchService(searchResult);
     const settings = makeSettings(trigger);
     const suggest = new SemanticLinkSuggest(
@@ -55,7 +83,7 @@ function makeSuggest(
         searchService as never,
         settings as never
     );
-    return { suggest, searchService };
+    return { suggest, searchService, app };
 }
 
 /** Build a minimal HTMLElement with Obsidian's createDiv/createSpan/addClass helpers. */
@@ -89,8 +117,18 @@ function makeEl(): HTMLElement {
     return el;
 }
 
+/** Build a minimal editor mock with stubbed replaceRange and setCursor. */
+function makeEditor(line = ";;hello") {
+    return {
+        getLine: vi.fn().mockReturnValue(line),
+        replaceRange: vi.fn(),
+        setCursor: vi.fn(),
+    };
+}
+
 beforeEach(() => {
     vi.clearAllMocks();
+    noticeMessages.length = 0;
 });
 
 describe("SemanticLinkSuggest — getSuggestions", () => {
@@ -135,5 +173,84 @@ describe("SemanticLinkSuggest — renderSuggestion", () => {
         // Math.round(0.836 * 100) = 84
         const scoreEl = el.querySelector(".semantic-search-score");
         expect(scoreEl?.textContent).toBe("84%");
+    });
+});
+
+describe("SemanticLinkSuggest — selectSuggestion", () => {
+    it("inserts [[wikilink]] over the trigger range and advances the cursor when the path resolves", () => {
+        const note = makeSimilarNote({ path: "notes/test.md" });
+        const app = makeApp(true, "notes/test.md");
+        const { suggest } = makeSuggest(";;", makeSearchResult([note]), app);
+
+        const editor = makeEditor();
+        // Simulate a context where the trigger started at ch=0 on line 0.
+        const start = { line: 0, ch: 0 };
+        const end = { line: 0, ch: 7 }; // ";;hello"
+        (suggest as never as { context: unknown }).context = {
+            editor,
+            file: null,
+            start,
+            end,
+        };
+
+        suggest.selectSuggestion(note, new MouseEvent("click") as never);
+
+        // [[test]] + trailing space = "[[test]] "
+        expect(editor.replaceRange).toHaveBeenCalledWith("[[test]] ", start, end);
+        expect(editor.setCursor).toHaveBeenCalledWith({
+            line: 0,
+            ch: "[[test]] ".length,
+        });
+        expect(noticeMessages).toHaveLength(0);
+    });
+
+    it("fires a Notice and does not mutate the editor when the path does not resolve", () => {
+        const note = makeSimilarNote({ path: "notes/missing.md" });
+        const app = makeApp(false, "notes/missing.md");
+        const { suggest } = makeSuggest(";;", makeSearchResult([note]), app);
+
+        const editor = makeEditor();
+        (suggest as never as { context: unknown }).context = {
+            editor,
+            file: null,
+            start: { line: 0, ch: 0 },
+            end: { line: 0, ch: 7 },
+        };
+
+        suggest.selectSuggestion(note, new MouseEvent("click") as never);
+
+        expect(editor.replaceRange).not.toHaveBeenCalled();
+        expect(editor.setCursor).not.toHaveBeenCalled();
+        expect(noticeMessages.some((m) => m.includes("notes/missing.md"))).toBe(true);
+    });
+});
+
+describe("SemanticLinkSuggest — onTrigger", () => {
+    it("returns trigger info with correct start offset and query when trigger is present mid-line", () => {
+        const { suggest } = makeSuggest(";;");
+        // Line: "some text;;foo" — trigger at ch=9, query="foo", cursor at end
+        const cursor = { line: 2, ch: 14 };
+        const editor = makeEditor("some text;;foo");
+        const result = suggest.onTrigger(cursor as never, editor as never, null);
+
+        expect(result).not.toBeNull();
+        expect(result?.start).toEqual({ line: 2, ch: 9 });
+        expect(result?.end).toEqual(cursor);
+        expect(result?.query).toBe("foo");
+    });
+
+    it("returns null when the trigger is absent from the line", () => {
+        const { suggest } = makeSuggest(";;");
+        const cursor = { line: 0, ch: 5 };
+        const editor = makeEditor("hello");
+        expect(suggest.onTrigger(cursor as never, editor as never, null)).toBeNull();
+    });
+
+    it("returns null when the settings trigger is empty (feature disabled)", () => {
+        const { suggest } = makeSuggest("");
+        const cursor = { line: 0, ch: 5 };
+        // Even though ";;" appears in the line, empty trigger disables the feature.
+        const editor = makeEditor(";;foo");
+        expect(suggest.onTrigger(cursor as never, editor as never, null)).toBeNull();
     });
 });
