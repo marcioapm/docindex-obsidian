@@ -13,6 +13,7 @@ function hit(overrides: Partial<DocindexHit> = {}): DocindexHit {
         score: 0.03,
         scoreNormalized: 0.87,
         chunkId: "c1",
+        mediaType: "text",
         ...overrides,
     };
 }

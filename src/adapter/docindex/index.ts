@@ -6,5 +6,6 @@ export type {
     DocindexHit,
     DocindexSearchResponse,
     DocindexSettings,
+    MediaType,
 } from "./types";
-export { DEFAULT_DOCINDEX_SETTINGS } from "./types";
+export { DEFAULT_DOCINDEX_SETTINGS, formatMediaLabel } from "./types";
