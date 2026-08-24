@@ -1,7 +1,89 @@
 import type { SettingsService } from "@/application/SettingsService";
-import { Notice, Setting, SettingGroup, requestUrl } from "obsidian";
-import type { DocindexClient } from "@/adapter/docindex";
+import { Notice, Setting, SettingGroup, requestUrl, type RequestUrlResponse } from "obsidian";
+import type { DocindexClient, RequestUrlFn } from "@/adapter/docindex";
 import { isForbiddenTrigger } from "./semanticLinkTrigger";
+
+export type HealthCheckResult =
+    | { kind: "missing-url" }
+    | { kind: "missing-token" }
+    | { kind: "success"; status: number; indexedChunks?: number; embeddingModel?: string }
+    | { kind: "authentication-failed" }
+    | { kind: "http-error"; status: number }
+    | { kind: "malformed" }
+    | { kind: "unreachable" };
+
+export interface HealthCheckClient {
+    reset(): void;
+}
+
+export interface TestDocindexHealthOptions {
+    backendUrl: string;
+    bearerToken: string;
+    requestFn: RequestUrlFn;
+    client: HealthCheckClient;
+}
+
+export async function testDocindexHealth(options: TestDocindexHealthOptions): Promise<HealthCheckResult> {
+    const base = options.backendUrl.trim().replace(/\/+$/, "");
+    if (!base) return { kind: "missing-url" };
+
+    const bearerToken = options.bearerToken.trim();
+    if (!bearerToken) return { kind: "missing-token" };
+
+    let response: RequestUrlResponse;
+    try {
+        response = await options.requestFn({
+            url: `${base}/health`,
+            method: "GET",
+            headers: {
+                Authorization: `Bearer ${bearerToken}`,
+                Accept: "application/json",
+            },
+            throw: false,
+        });
+    } catch {
+        return { kind: "unreachable" };
+    }
+
+    if (response.status < 200 || response.status >= 300) {
+        return { kind: "http-error", status: response.status };
+    }
+
+    const health = parseHealthResponse(response);
+    if (!health) return { kind: "malformed" };
+    if (health.authenticated !== true) return { kind: "authentication-failed" };
+
+    options.client.reset();
+    return {
+        kind: "success",
+        status: response.status,
+        indexedChunks: typeof health.indexed_chunks === "number" ? health.indexed_chunks : undefined,
+        embeddingModel: typeof health.embedding_model === "string" ? health.embedding_model : undefined,
+    };
+}
+
+function parseHealthResponse(response: RequestUrlResponse): Record<string, unknown> | null {
+    let raw: unknown;
+    try {
+        raw = response.json ?? JSON.parse(response.text ?? "");
+    } catch {
+        return null;
+    }
+    if (!isRecord(raw) || raw.ok !== true) return null;
+    return raw;
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+    return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function formatHealthSuccess(result: Extract<HealthCheckResult, { kind: "success" }>): string {
+    const details: string[] = [];
+    if (result.indexedChunks !== undefined) details.push(`${result.indexedChunks} chunks`);
+    if (result.embeddingModel) details.push(result.embeddingModel);
+    const suffix = details.length > 0 ? `: ${details.join(", ")}` : "";
+    return `docindex: backend OK (${result.status})${suffix}`;
+}
 
 interface DocindexSettingsSectionProps {
     containerEl: HTMLElement;
@@ -138,24 +220,34 @@ export function renderDocindexSection(props: DocindexSettingsSectionProps): void
         .addButton((button) => {
             button.setButtonText("Test").onClick(async () => {
                 const cfg = settingsService.get().docindex;
-                const base = cfg.backendUrl.trim().replace(/\/+$/, "");
-                if (!base) {
-                    new Notice("docindex: set the backend URL first");
-                    return;
-                }
-                try {
-                    const resp = await requestUrl({
-                        url: `${base}/health`,
-                        method: "GET",
-                        throw: false,
-                    });
-                    if (resp.status >= 200 && resp.status < 300) {
-                        new Notice(`docindex: backend OK (${resp.status})`);
-                    } else {
-                        new Notice(`docindex: backend returned ${resp.status}`);
-                    }
-                } catch {
-                    new Notice("docindex: backend unreachable (Tailscale?)");
+                const result = await testDocindexHealth({
+                    backendUrl: cfg.backendUrl,
+                    bearerToken: cfg.bearerToken,
+                    requestFn: requestUrl,
+                    client,
+                });
+                switch (result.kind) {
+                    case "missing-url":
+                        new Notice("docindex: set the backend URL first");
+                        return;
+                    case "missing-token":
+                        new Notice("docindex: set the bearer token first");
+                        return;
+                    case "success":
+                        new Notice(formatHealthSuccess(result));
+                        return;
+                    case "authentication-failed":
+                        new Notice("docindex: server reachable but bearer token is missing or wrong");
+                        return;
+                    case "http-error":
+                        new Notice(`docindex: backend returned ${result.status}`);
+                        return;
+                    case "malformed":
+                        new Notice("docindex: backend returned a malformed health response");
+                        return;
+                    case "unreachable":
+                        new Notice("docindex: backend unreachable (Tailscale?)");
+                        return;
                 }
             });
         });
