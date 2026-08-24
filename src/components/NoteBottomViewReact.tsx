@@ -3,6 +3,7 @@ import type { MarkdownView, TFile, Workspace } from "obsidian";
 import { Menu } from "obsidian";
 import { useEffect, useLayoutEffect, useState } from "react";
 import type { Observable } from "rxjs";
+import { formatMediaLabel } from "@/adapter/docindex";
 
 export interface SimilarNoteEntry {
     file: TFile;
@@ -22,6 +23,14 @@ export interface SimilarNoteEntry {
      * heading; otherwise the note opens at the top.
      */
     headingPath?: string[];
+    /** Content category of the top-scoring chunk. Defaults to "text". */
+    mediaType?: "text" | "image" | "pdf";
+    /** 0-based start page of the embedded range (PDFs). Null = not paginated. */
+    mediaStart?: number | null;
+    /** 0-based exclusive end page of the embedded range (PDFs). Null = not paginated. */
+    mediaEnd?: number | null;
+    /** True when the embedding covers only part of the source. */
+    truncated?: boolean;
 }
 
 export interface NoteBottomViewModel {
@@ -232,6 +241,17 @@ const SearchResult = ({
                     )}
                 </div>
                 <div className="tree-item-flair-outer">
+                    {(() => {
+                        const label = formatMediaLabel({
+                            mediaType: note.mediaType ?? "text",
+                            mediaStart: note.mediaStart ?? null,
+                            mediaEnd: note.mediaEnd ?? null,
+                            truncated: note.truncated ?? false,
+                        });
+                        return label ? (
+                            <div className="tree-item-flair docindex-media-type">{label}</div>
+                        ) : null;
+                    })()}
                     <div className="tree-item-flair">
                         {`${Math.round(note.similarity * 100)}%`}
                     </div>

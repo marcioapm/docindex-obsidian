@@ -352,3 +352,13 @@ select option:disabled {
 .model-settings-section + .setting-group {
     margin-top: var(--size-4-6);
 }
+
+/* Media type indicator shown on image and PDF hits.
+   Renders below the title in the semantic search modal and beside the
+   score flair in the sidebar. Uses muted text to avoid competing with
+   the note title. */
+.docindex-media-type {
+    font-size: var(--font-ui-smaller);
+    color: var(--text-muted);
+    line-height: 1.2;
+}
