@@ -25,6 +25,14 @@ interface SimilarNoteCacheEntry {
 const MAX_CACHE_SIZE = 20;
 
 /**
+ * Extensions indexed by docindex-server as text chunks. The sidebar attaches
+ * to a Markdown editor leaf, so only text formats belong here — binary files
+ * (images, PDFs) are searchable via the semantic modal but have no sidebar
+ * representation.
+ */
+export const INDEXABLE_TEXT_EXTENSIONS = new Set(["md", "txt"]);
+
+/**
  * Drives the sidebar view-model.
  *
  * Reads the active note's content via `vault.cachedRead`, asks the injected
@@ -82,7 +90,7 @@ export class SimilarNoteCoordinator {
     }
 
     async onFileOpen(file: TFile | null) {
-        if (!file || file.extension !== "md") return;
+        if (!file || !INDEXABLE_TEXT_EXTENSIONS.has(file.extension)) return;
         this.emitNoteBottomViewModel(file);
     }
 
@@ -133,6 +141,10 @@ export class SimilarNoteCoordinator {
                 additionalChunks: similarNote.additionalChunks,
                 headingPath: similarNote.headingPath,
                 path: similarNote.path,
+                mediaType: similarNote.mediaType,
+                mediaStart: similarNote.mediaStart,
+                mediaEnd: similarNote.mediaEnd,
+                truncated: similarNote.truncated,
             }))
             .filter((vm) => {
                 if (vm.file === null) {
