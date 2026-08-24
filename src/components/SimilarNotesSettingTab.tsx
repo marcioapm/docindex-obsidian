@@ -6,7 +6,7 @@ import type MainPlugin from "../main";
 import { renderDocindexSection } from "./DocindexSettingsSection";
 
 /**
- * Settings tab for obsidian-docindex.
+ * Settings tab for docindex-obsidian.
  *
  * Two sections only:
  *   1. Docindex backend — URL, bearer token, limit, enabled toggle, test.

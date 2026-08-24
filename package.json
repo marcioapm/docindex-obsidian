@@ -1,5 +1,5 @@
 {
-    "name": "obsidian-docindex",
+    "name": "docindex-obsidian",
     "version": "0.1.0",
     "description": "Obsidian plugin that queries a remote docindex-server for semantic + BM25 search. Fork of joybro/obsidian-similar-notes.",
     "main": "main.js",
@@ -22,8 +22,16 @@
         "semantic-search",
         "docindex"
     ],
-    "author": "Young Lee",
+    "author": "Márcio Martins",
     "license": "MIT",
+    "repository": {
+        "type": "git",
+        "url": "https://github.com/marcioapm/docindex-obsidian.git"
+    },
+    "homepage": "https://github.com/marcioapm/docindex-obsidian",
+    "bugs": {
+        "url": "https://github.com/marcioapm/docindex-obsidian/issues"
+    },
     "devDependencies": {
         "@testing-library/jest-dom": "^6.6.3",
         "@testing-library/react": "^14.0.0",
