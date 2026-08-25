@@ -162,9 +162,6 @@ describe("SimilarNotesViewReact", () => {
 });
 
 describe("SimilarNotesViewReact — media label rendering", () => {
-    // Tests for the label block in SearchResult (NoteBottomViewReact.tsx:244–253).
-    // Each fixture exercises a branch that the existing tests leave dead.
-
     function makeWorkspace(leaf: MarkdownView): Partial<Workspace> {
         return {
             getLeaf: vi.fn().mockReturnValue(leaf),
@@ -175,9 +172,6 @@ describe("SimilarNotesViewReact — media label rendering", () => {
     }
 
     test("renders docindex-media-type element for a PDF hit with a page range", async () => {
-        // Mutation: removing the `label ? ... : null` conditional in SearchResult
-        // (replacing it with `null` unconditionally) leaves this assertion failing
-        // because the element is never rendered.
         const currentFile = createMockTFile("current-file.md");
         const leaf = { file: currentFile } as unknown as MarkdownView;
         const subject$ = new BehaviorSubject({
@@ -213,8 +207,6 @@ describe("SimilarNotesViewReact — media label rendering", () => {
     });
 
     test("renders docindex-media-type element for an image hit", async () => {
-        // Mutation: removing the image branch in formatMediaLabel (returning ""
-        // for image hits) causes the element to be absent from the DOM.
         const currentFile = createMockTFile("current-file.md");
         const leaf = { file: currentFile } as unknown as MarkdownView;
         const subject$ = new BehaviorSubject({
@@ -249,9 +241,6 @@ describe("SimilarNotesViewReact — media label rendering", () => {
     });
 
     test("renders no docindex-media-type element for a text hit", async () => {
-        // Mutation: rendering the label unconditionally (removing the `label &&`
-        // guard) would produce a docindex-media-type element even for text hits,
-        // breaking the `not.toBeInTheDocument()` assertion.
         const currentFile = createMockTFile("current-file.md");
         const leaf = { file: currentFile } as unknown as MarkdownView;
         const subject$ = new BehaviorSubject({

@@ -49,7 +49,6 @@ function makeFinder(notes: SimilarNote[] = []) {
 
 describe("SimilarNoteCoordinator — INDEXABLE_TEXT_EXTENSIONS", () => {
     it("contains 'md' and 'txt', and no other common extensions", () => {
-        // Mutation: removing "txt" from INDEXABLE_TEXT_EXTENSIONS.
         expect(INDEXABLE_TEXT_EXTENSIONS.has("md")).toBe(true);
         expect(INDEXABLE_TEXT_EXTENSIONS.has("txt")).toBe(true);
         // Binary extensions must not be included — sidebar has no meaning for them.
@@ -60,11 +59,8 @@ describe("SimilarNoteCoordinator — INDEXABLE_TEXT_EXTENSIONS", () => {
 
 describe("SimilarNoteCoordinator — getSimilarNotes media field mapping", () => {
     it("maps all four media fields from SimilarNote onto SimilarNoteEntry", async () => {
-        // Mutation: deleting any of the four media-field assignments in
-        // getSimilarNotes (SimilarNoteCoordinator.ts lines 144–147) leaves that
-        // property undefined on the entry, failing the corresponding assertion below.
         // An image hit with truncated=true ensures every value is non-default and
-        // distinguishable from the SimilarNoteEntry interface defaults.
+        // distinguishable from SimilarNoteEntry defaults.
         const { SimilarNote } = await import("@/domain/model/SimilarNote");
         const imageNote = new SimilarNote(
             "Photo",           // title
@@ -102,8 +98,6 @@ describe("SimilarNoteCoordinator — getSimilarNotes media field mapping", () =>
 
 describe("SimilarNoteCoordinator — onFileOpen extension filter", () => {
     it("triggers getSimilarNotes for a .md file", async () => {
-        // Mutation: changing INDEXABLE_TEXT_EXTENSIONS.has() to === "md" would still
-        // pass this test — the .txt test below is the differentiating case.
         const finder = makeFinder();
         const mdFile = makeTFile("notes/foo.md", "md");
         const vault = makeVault(new Map([["notes/foo.md", mdFile]]));
@@ -118,8 +112,6 @@ describe("SimilarNoteCoordinator — onFileOpen extension filter", () => {
     });
 
     it("triggers getSimilarNotes for a .txt file", async () => {
-        // Mutation: removing "txt" from INDEXABLE_TEXT_EXTENSIONS causes this test
-        // to fail because onFileOpen returns early for the .txt extension.
         const finder = makeFinder();
         const txtFile = makeTFile("notes/readme.txt", "txt");
         const vault = makeVault(new Map([["notes/readme.txt", txtFile]]));
@@ -134,8 +126,6 @@ describe("SimilarNoteCoordinator — onFileOpen extension filter", () => {
     });
 
     it("does not trigger getSimilarNotes for a non-indexable extension", async () => {
-        // Mutation: removing the INDEXABLE_TEXT_EXTENSIONS guard entirely would
-        // cause findSimilarNotes to be called for .pdf files.
         const finder = makeFinder();
         const pdfFile = makeTFile("docs/report.pdf", "pdf");
         const vault = makeVault();

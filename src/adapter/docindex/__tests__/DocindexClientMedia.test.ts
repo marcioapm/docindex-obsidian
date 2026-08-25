@@ -1,7 +1,6 @@
 /**
- * Tests for toDomainHit media field mapping and isHitWire media field validation.
- * Kept in a separate file to stay within the 400-line ESLint limit for
- * DocindexClient.test.ts.
+ * toDomainHit media field mapping and isHitWire media field validation.
+ * Kept separate to stay within the 400-line ESLint limit for DocindexClient.test.ts.
  */
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { DocindexClient } from "../DocindexClient";
@@ -34,33 +33,38 @@ function makeClient(overrides: Partial<DocindexSettings> = {}, requestFn?: Retur
     return { client, requestFn: fn };
 }
 
+/** Minimal valid wire hit. Extra fields are merged on top. */
+function makeHitJson(extra: Record<string, unknown> = {}) {
+    return { path: "n.md", title: "N", heading_path: [], snippet: "s", score: 0.5, chunk_id: "c", ...extra };
+}
+
+function makeResponse(extra: Record<string, unknown> = {}) {
+    return vi.fn().mockResolvedValue({
+        status: 200,
+        headers: {},
+        json: { hits: [makeHitJson(extra)] },
+    });
+}
+
 beforeEach(() => {
     noticeMessages.length = 0;
 });
 
 describe("DocindexClient — toDomainHit media field mapping", () => {
     it("maps all six media fields from a new-server hit", async () => {
-        // Mutation that would make this fail: omitting any one of the six
-        // field assignments in toDomainHit (e.g. deleting `mediaType: wire.media_type ?? "text"`).
         const requestFn = vi.fn().mockResolvedValue({
             status: 200,
             headers: {},
             json: {
                 hits: [
-                    {
-                        path: "scan.pdf",
-                        title: "Scan",
-                        heading_path: [],
-                        snippet: "PDF pages 2–4",
-                        score: 0.8,
-                        chunk_id: "p:0",
+                    makeHitJson({
                         media_type: "pdf",
                         mime_type: "application/pdf",
                         media_start: 1,
                         media_end: 4,
                         media_unit: "page",
                         truncated: false,
-                    },
+                    }),
                 ],
             },
         });
@@ -76,52 +80,23 @@ describe("DocindexClient — toDomainHit media field mapping", () => {
     });
 
     it("defaults mediaType to 'text' when media_type is absent (old server)", async () => {
-        // Mutation that would make this fail: removing the `?? "text"` fallback
-        // in toDomainHit, leaving `mediaType: undefined`.
-        const requestFn = vi.fn().mockResolvedValue({
-            status: 200,
-            headers: {},
-            json: {
-                hits: [
-                    { path: "note.md", title: "N", heading_path: [], snippet: "s", score: 0.5, chunk_id: "c" },
-                ],
-            },
-        });
-        const { client } = makeClient({}, requestFn);
+        const { client } = makeClient({}, makeResponse());
         const res = await client.search("q");
         expect(res.hits[0].mediaType).toBe("text");
     });
 
     it("maps a truncated image hit", async () => {
-        // Mutation: removing `truncated: wire.truncated` in toDomainHit would leave
-        // truncated undefined, failing the toBe(true) assertion.
-        // Mutation for mimeType: removing `mimeType: wire.mime_type` leaves mimeType
-        // undefined, failing toBe('image/gif').
-        // Mutation for mediaUnit: removing `mediaUnit: wire.media_unit` leaves mediaUnit
-        // undefined, failing toBeNull() (undefined !== null).
-        const requestFn = vi.fn().mockResolvedValue({
-            status: 200,
-            headers: {},
-            json: {
-                hits: [
-                    {
-                        path: "anim.gif",
-                        title: "Anim",
-                        heading_path: [],
-                        snippet: "Image",
-                        score: 0.7,
-                        chunk_id: "img:0",
-                        media_type: "image",
-                        mime_type: "image/gif",
-                        media_start: null,
-                        media_end: null,
-                        media_unit: null,
-                        truncated: true,
-                    },
-                ],
-            },
-        });
-        const { client } = makeClient({}, requestFn);
+        const { client } = makeClient(
+            {},
+            makeResponse({
+                media_type: "image",
+                mime_type: "image/gif",
+                media_start: null,
+                media_end: null,
+                media_unit: null,
+                truncated: true,
+            })
+        );
         const res = await client.search("q");
         const h = res.hits[0];
         expect(h.mediaType).toBe("image");
@@ -135,181 +110,55 @@ describe("DocindexClient — toDomainHit media field mapping", () => {
 
 describe("DocindexClient — isHitWire media field validation", () => {
     it("accepts a payload with none of the new fields (old server)", async () => {
-        // Mutation that would make this fail: adding a required check for any
-        // of the six new fields in isHitWire (e.g. `if (!v.media_type) return false`).
-        const requestFn = vi.fn().mockResolvedValue({
-            status: 200,
-            headers: {},
-            json: {
-                hits: [
-                    { path: "n.md", title: "N", heading_path: [], snippet: "s", score: 0.5, chunk_id: "c" },
-                ],
-            },
-        });
-        const { client } = makeClient({}, requestFn);
-        // Old-server payload with no media fields must parse successfully.
+        const { client } = makeClient({}, makeResponse());
         const res = await client.search("q");
         expect(res.hits).toHaveLength(1);
     });
 
     it("rejects a hit where a present media_type has an unrecognised value", async () => {
-        // Mutation that would make this fail: removing the type check for
-        // `media_type` in isHitWire (e.g. deleting the VALID_MEDIA_TYPES guard).
-        const requestFn = vi.fn().mockResolvedValue({
-            status: 200,
-            headers: {},
-            json: {
-                hits: [
-                    {
-                        path: "n.md",
-                        title: "N",
-                        heading_path: [],
-                        snippet: "s",
-                        score: 0.5,
-                        chunk_id: "c",
-                        media_type: "video", // not in MediaType union
-                    },
-                ],
-            },
-        });
-        const { client } = makeClient({}, requestFn);
-        // The guard must reject the response; the client surfaces a malformed error.
+        const { client } = makeClient({}, makeResponse({ media_type: "video" }));
         await expect(client.search("q")).rejects.toMatchObject({ kind: "malformed" });
     });
 
     it("rejects a hit where truncated is present but not a boolean", async () => {
-        // Mutation that would make this fail: removing the truncated type-check
-        // in isHitWire (the `typeof v.truncated !== "boolean"` guard).
-        const requestFn = vi.fn().mockResolvedValue({
-            status: 200,
-            headers: {},
-            json: {
-                hits: [
-                    {
-                        path: "n.md",
-                        title: "N",
-                        heading_path: [],
-                        snippet: "s",
-                        score: 0.5,
-                        chunk_id: "c",
-                        truncated: "yes", // wrong type: string, not boolean
-                    },
-                ],
-            },
-        });
-        const { client } = makeClient({}, requestFn);
+        const { client } = makeClient({}, makeResponse({ truncated: "yes" }));
         await expect(client.search("q")).rejects.toMatchObject({ kind: "malformed" });
     });
 
     it("rejects a hit where mime_type is present but not a string or null", async () => {
-        // Mutation: removing the mime_type type-check in isHitWire
-        // (`typeof v.mime_type !== "string"` guard) accepts the number 42,
-        // leaving this test to fail with a resolved value instead of rejection.
-        const requestFn = vi.fn().mockResolvedValue({
-            status: 200,
-            headers: {},
-            json: {
-                hits: [
-                    {
-                        path: "n.md",
-                        title: "N",
-                        heading_path: [],
-                        snippet: "s",
-                        score: 0.5,
-                        chunk_id: "c",
-                        mime_type: 42, // wrong type: number, not string or null
-                    },
-                ],
-            },
-        });
-        const { client } = makeClient({}, requestFn);
+        const { client } = makeClient({}, makeResponse({ mime_type: 42 }));
         await expect(client.search("q")).rejects.toMatchObject({ kind: "malformed" });
     });
 
     it("rejects a hit where media_start is present but not a number or null", async () => {
-        // Mutation: removing the media_start type-check in isHitWire
-        // (`typeof v.media_start !== "number"` guard) accepts the string 'first'.
-        const requestFn = vi.fn().mockResolvedValue({
-            status: 200,
-            headers: {},
-            json: {
-                hits: [
-                    {
-                        path: "n.md",
-                        title: "N",
-                        heading_path: [],
-                        snippet: "s",
-                        score: 0.5,
-                        chunk_id: "c",
-                        media_start: "first", // wrong type: string, not number or null
-                    },
-                ],
-            },
-        });
-        const { client } = makeClient({}, requestFn);
+        const { client } = makeClient({}, makeResponse({ media_start: "first" }));
         await expect(client.search("q")).rejects.toMatchObject({ kind: "malformed" });
     });
 
     it("rejects a hit where media_end is present but not a number or null", async () => {
-        // Mutation: removing the media_end type-check in isHitWire
-        // (`typeof v.media_end !== "number"` guard) accepts the boolean true.
-        const requestFn = vi.fn().mockResolvedValue({
-            status: 200,
-            headers: {},
-            json: {
-                hits: [
-                    {
-                        path: "n.md",
-                        title: "N",
-                        heading_path: [],
-                        snippet: "s",
-                        score: 0.5,
-                        chunk_id: "c",
-                        media_end: true, // wrong type: boolean, not number or null
-                    },
-                ],
-            },
-        });
-        const { client } = makeClient({}, requestFn);
+        const { client } = makeClient({}, makeResponse({ media_end: true }));
         await expect(client.search("q")).rejects.toMatchObject({ kind: "malformed" });
     });
 });
 
 describe("DocindexClient — isHitWire null-as-absent semantics", () => {
     it("accepts a payload with all media fields explicitly null", async () => {
-        // A Rust serde_json server using Option<T> without skip_serializing_if
-        // emits null for absent fields rather than omitting them. isHitWire must
-        // treat null the same as undefined for every optional media field.
-        //
-        // Mutation: changing `v.media_type != null` back to `v.media_type !== undefined`
-        // makes null fail the VALID_MEDIA_TYPES check, causing this test to reject
-        // instead of resolving.
-        const requestFn = vi.fn().mockResolvedValue({
-            status: 200,
-            headers: {},
-            json: {
-                hits: [
-                    {
-                        path: "n.md",
-                        title: "N",
-                        heading_path: [],
-                        snippet: "s",
-                        score: 0.5,
-                        chunk_id: "c",
-                        media_type: null,
-                        mime_type: null,
-                        media_start: null,
-                        media_end: null,
-                        media_unit: null,
-                        truncated: null,
-                    },
-                ],
-            },
-        });
-        const { client } = makeClient({}, requestFn);
+        // Rust serde_json with Option<T> and no skip_serializing_if emits null rather
+        // than omitting absent fields. isHitWire uses `!= null` (not `!== undefined`)
+        // so null passes the same as undefined for every optional media field.
+        const { client } = makeClient(
+            {},
+            makeResponse({
+                media_type: null,
+                mime_type: null,
+                media_start: null,
+                media_end: null,
+                media_unit: null,
+                truncated: null,
+            })
+        );
         const res = await client.search("q");
         expect(res.hits).toHaveLength(1);
-        // Null media_type falls through to the toDomainHit ?? "text" default.
         expect(res.hits[0].mediaType).toBe("text");
     });
 });

@@ -50,12 +50,7 @@ describe("RemoteSearchService", () => {
     });
 
     it("groupHitsByPath propagates all four media fields onto SimilarNote", async () => {
-        // Mutation: removing any of the four positional arguments (mediaType,
-        // mediaStart, mediaEnd, truncated) from the SimilarNote constructor call
-        // in groupHitsByPath causes the corresponding assertion below to fail.
-        // A text hit with default values would not distinguish removal of mediaType
-        // from the default; a pdf hit with non-default values makes each field
-        // independently load-bearing.
+        // Non-default pdf values ensure each field is independently load-bearing.
         const svc = new RemoteSearchService(
             mockClient({
                 hits: [

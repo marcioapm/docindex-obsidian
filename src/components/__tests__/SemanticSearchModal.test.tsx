@@ -1,16 +1,11 @@
 /**
- * Focused tests for the media-label render path in SearchResultItem.
+ * Tests for the media-label render path in SearchResultItem.
  *
  * SemanticSearchModal extends Obsidian's Modal and mounts via createRoot on
  * a runtime-provided DOM element — that flow requires an Obsidian desktop
- * runtime and cannot be exercised here. SemanticSearchContent requires an
- * App with vault.getAbstractFileByPath, workspace, and a 300ms debounced
- * search flow that would need fake timers and a fuller App stub.
- *
- * SearchResultItem is the component that owns the media-label render path.
- * It is a pure function component with no Obsidian dependencies. Exporting
- * it (one word, no structural change) makes these tests possible without
- * faking the Obsidian runtime or the debounce lifecycle.
+ * runtime and cannot be exercised here. SearchResultItem is a pure function
+ * component with no Obsidian dependencies; exporting it makes these tests
+ * possible without faking the full runtime or the debounce lifecycle.
  */
 import "@testing-library/jest-dom/vitest";
 import { render, screen } from "@testing-library/react";
@@ -45,9 +40,6 @@ function baseProps(note: SimilarNote, file: TFile | null) {
 
 describe("SearchResultItem — media label rendering", () => {
     it("renders docindex-media-type element for a PDF hit with a page range", () => {
-        // Mutation: removing the `mediaLabel && <div ...>` conditional in
-        // SearchResultItem replaces the rendered element with null, so
-        // screen.getByText throws and the test fails.
         const note = new SimilarNote(
             "Annual Report",
             "reports/annual.pdf",
@@ -69,9 +61,6 @@ describe("SearchResultItem — media label rendering", () => {
     });
 
     it("renders docindex-media-type element for an image hit", () => {
-        // Mutation: removing the image branch from formatMediaLabel (returning ""
-        // for image hits) causes formatMediaLabel to return "" and the element
-        // is not rendered, failing the getByText assertion.
         const note = new SimilarNote(
             "Vacation Photo",
             "photos/beach.png",
@@ -92,10 +81,6 @@ describe("SearchResultItem — media label rendering", () => {
     });
 
     it("renders no docindex-media-type element for a text hit", () => {
-        // Mutation: rendering the label unconditionally (removing the `mediaLabel &&`
-        // guard, e.g. always rendering <div className="docindex-media-type">) would
-        // produce an element in the DOM even for text hits, making
-        // not.toBeInTheDocument() fail.
         const note = new SimilarNote(
             "Plain Note",
             "notes/plain.md",
