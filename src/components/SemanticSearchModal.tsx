@@ -164,11 +164,12 @@ export function useSemanticSearch(textSearchService: TextSearchServiceLike) {
     const [selectionSource, setSelectionSource] =
         useState<"keyboard" | "reset">("reset");
     const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-    // Bumped at the start of every performSearch call (including the
-    // short-query branch) and on unmount. A request applies its result only
-    // if this counter hasn't moved since it started — otherwise a slower
-    // older request would overwrite a newer one's results or clear the
-    // spinner while the newer request is still in flight.
+    // Bumped synchronously on every query change (short-query path included)
+    // and on unmount, before any request is scheduled. A request applies its
+    // result only if this counter still matches the value it captured at
+    // scheduling time — otherwise a slower older request would overwrite a
+    // newer one's results, resurrect stale results/warnings, or clear the
+    // spinner while a newer request is still in flight or debouncing.
     const generationRef = useRef(0);
 
     const selectByKeyboard = useCallback((updater: (prev: number) => number) => {
@@ -177,15 +178,7 @@ export function useSemanticSearch(textSearchService: TextSearchServiceLike) {
     }, []);
 
     const performSearch = useCallback(
-        async (searchQuery: string) => {
-            const generation = ++generationRef.current;
-
-            if (searchQuery.length < MIN_SEARCH_LENGTH) {
-                setResults([]);
-                setTokenWarning(null);
-                return;
-            }
-
+        async (searchQuery: string, generation: number) => {
             setIsSearching(true);
             try {
                 const searchResult =
@@ -215,7 +208,20 @@ export function useSemanticSearch(textSearchService: TextSearchServiceLike) {
 
     useEffect(() => {
         if (debounceRef.current) clearTimeout(debounceRef.current);
-        debounceRef.current = setTimeout(() => performSearch(query), DEBOUNCE_MS);
+        // Invalidate the previous request immediately — not after the debounce
+        // fires — so a change to `query` cannot be overtaken by an in-flight
+        // request that was still current under the old query.
+        const generation = ++generationRef.current;
+
+        if (query.length < MIN_SEARCH_LENGTH) {
+            setResults([]);
+            setTokenWarning(null);
+            return;
+        }
+
+        debounceRef.current = setTimeout(() => {
+            void performSearch(query, generation);
+        }, DEBOUNCE_MS);
         return () => {
             if (debounceRef.current) clearTimeout(debounceRef.current);
         };

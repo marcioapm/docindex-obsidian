@@ -101,6 +101,27 @@ describe("SearchResultItem — media label rendering", () => {
         expect(screen.getByText("Plain Note")).toBeInTheDocument();
         expect(document.querySelector(".docindex-media-type")).not.toBeInTheDocument();
     });
+
+    it("renders no percentage flair for a media hit with similarity undefined", () => {
+        // RemoteSearchService withholds similarity for media hits even when
+        // score_normalized is present (rank-derived, not query-dependent).
+        const note = new SimilarNote(
+            "Scanned Report",
+            "reports/scan.pdf",
+            undefined,
+            "PDF snippet",
+            "source",
+            [],
+            [],
+            "pdf:0",
+            "pdf",
+            0,
+            1,
+            false
+        );
+        render(<SearchResultItem {...baseProps(note, makeFile("reports/scan.pdf"))} />);
+        expect(document.querySelector(".semantic-search-score")).not.toBeInTheDocument();
+    });
 });
 
 function makeResult(paths: string[]): TextSearchResult {
@@ -236,6 +257,72 @@ describe("useSemanticSearch — out-of-order request guard", () => {
             await Promise.resolve();
         });
         expect(result.current.results).toEqual([]);
+    });
+
+    it("discards a stale result that resolves before the replacement debounce fires", async () => {
+        const first = deferred<TextSearchResult>();
+        const second = deferred<TextSearchResult>();
+        const findSimilarNotesFromText = vi
+            .fn()
+            .mockReturnValueOnce(first.promise)
+            .mockReturnValueOnce(second.promise);
+        const service = { findSimilarNotesFromText };
+
+        const { result } = renderHook(() => useSemanticSearch(service));
+
+        act(() => result.current.setQuery("first query"));
+        await act(async () => {
+            await vi.advanceTimersByTimeAsync(300);
+        });
+        expect(findSimilarNotesFromText).toHaveBeenCalledTimes(1);
+
+        // Query changes; the replacement debounce has NOT fired yet, so no
+        // second request exists. The stale first request resolves now.
+        act(() => result.current.setQuery("second query"));
+        await act(async () => {
+            first.resolve(makeResult(["a.md"]));
+            await Promise.resolve();
+        });
+
+        expect(result.current.results).toEqual([]);
+        expect(result.current.tokenWarning).toBeNull();
+
+        // Advance the debounce so the new query's request fires and resolves.
+        await act(async () => {
+            await vi.advanceTimersByTimeAsync(300);
+        });
+        expect(findSimilarNotesFromText).toHaveBeenCalledTimes(2);
+        await act(async () => {
+            second.resolve(makeResult(["b.md"]));
+            await Promise.resolve();
+        });
+        expect(result.current.results.map((n) => n.path)).toEqual(["b.md"]);
+    });
+
+    it("discards a stale over-limit warning that resolves before the replacement debounce fires", async () => {
+        const first = deferred<TextSearchResult>();
+        const findSimilarNotesFromText = vi.fn().mockReturnValueOnce(first.promise);
+        const service = { findSimilarNotesFromText };
+
+        const { result } = renderHook(() => useSemanticSearch(service));
+
+        act(() => result.current.setQuery("first query"));
+        await act(async () => {
+            await vi.advanceTimersByTimeAsync(300);
+        });
+
+        act(() => result.current.setQuery("second query"));
+        await act(async () => {
+            first.resolve({
+                similarNotes: [],
+                tokenCount: 999,
+                maxTokens: 500,
+                isOverLimit: true,
+            });
+            await Promise.resolve();
+        });
+
+        expect(result.current.tokenWarning).toBeNull();
     });
 });
 
