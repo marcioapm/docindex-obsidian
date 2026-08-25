@@ -211,14 +211,16 @@ function isHitWire(v: unknown): v is DocindexHitWire {
             return false;
         }
     }
-    // Media fields: all optional. A missing field passes; a present field
-    // with the wrong type fails so stale callers surface the mismatch.
-    if (v.media_type !== undefined && !VALID_MEDIA_TYPES.has(v.media_type as string)) return false;
+    // Media fields: all optional. A missing field (undefined) or an explicit
+    // null passes — both signal "not applicable". A present non-null value
+    // with the wrong type fails so server-side regressions surface immediately.
+    // Using loose `!= null` catches both `undefined` and `null` as absent.
+    if (v.media_type != null && !VALID_MEDIA_TYPES.has(v.media_type as string)) return false;
     if (v.mime_type !== undefined && v.mime_type !== null && typeof v.mime_type !== "string") return false;
     if (v.media_start !== undefined && v.media_start !== null && typeof v.media_start !== "number") return false;
     if (v.media_end !== undefined && v.media_end !== null && typeof v.media_end !== "number") return false;
     if (v.media_unit !== undefined && v.media_unit !== null && typeof v.media_unit !== "string") return false;
-    if (v.truncated !== undefined && typeof v.truncated !== "boolean") return false;
+    if (v.truncated != null && typeof v.truncated !== "boolean") return false;
     return true;
 }
 

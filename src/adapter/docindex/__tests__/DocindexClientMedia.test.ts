@@ -268,3 +268,42 @@ describe("DocindexClient — isHitWire media field validation", () => {
         await expect(client.search("q")).rejects.toMatchObject({ kind: "malformed" });
     });
 });
+
+describe("DocindexClient — isHitWire null-as-absent semantics", () => {
+    it("accepts a payload with all media fields explicitly null", async () => {
+        // A Rust serde_json server using Option<T> without skip_serializing_if
+        // emits null for absent fields rather than omitting them. isHitWire must
+        // treat null the same as undefined for every optional media field.
+        //
+        // Mutation: changing `v.media_type != null` back to `v.media_type !== undefined`
+        // makes null fail the VALID_MEDIA_TYPES check, causing this test to reject
+        // instead of resolving.
+        const requestFn = vi.fn().mockResolvedValue({
+            status: 200,
+            headers: {},
+            json: {
+                hits: [
+                    {
+                        path: "n.md",
+                        title: "N",
+                        heading_path: [],
+                        snippet: "s",
+                        score: 0.5,
+                        chunk_id: "c",
+                        media_type: null,
+                        mime_type: null,
+                        media_start: null,
+                        media_end: null,
+                        media_unit: null,
+                        truncated: null,
+                    },
+                ],
+            },
+        });
+        const { client } = makeClient({}, requestFn);
+        const res = await client.search("q");
+        expect(res.hits).toHaveLength(1);
+        // Null media_type falls through to the toDomainHit ?? "text" default.
+        expect(res.hits[0].mediaType).toBe("text");
+    });
+});
