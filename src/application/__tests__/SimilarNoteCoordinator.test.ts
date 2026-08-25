@@ -177,8 +177,6 @@ describe("SimilarNoteCoordinator — cache invalidation on settings change", () 
     });
 
     it("re-fetches after a showSourceChunk change even though mtime is unchanged", async () => {
-        // showSourceChunk is not one of the two result-count fields the old
-        // code enumerated, but it changes what getSimilarNotes emits.
         const finder = makeFinder([]);
         const mdFile = makeTFile("notes/foo.md", "md");
         const vault = makeVault(new Map([["notes/foo.md", mdFile]]));
@@ -230,6 +228,82 @@ describe("SimilarNoteCoordinator — cache invalidation on settings change", () 
         await coordinator.getSimilarNotes(mdFile);
 
         expect(finder.findSimilarNotes).toHaveBeenCalledTimes(2);
+    });
+
+    it("does not invalidate the cache on a semanticLinkTrigger-only change", async () => {
+        const finder = makeFinder([]);
+        const mdFile = makeTFile("notes/foo.md", "md");
+        const vault = makeVault(new Map([["notes/foo.md", mdFile]]));
+        const settingsService = makeSettingsService({ semanticLinkTrigger: ";;" });
+        const coordinator = new SimilarNoteCoordinator(
+            vault as Vault,
+            finder,
+            settingsService as ReturnType<typeof makeSettingsService>
+        );
+
+        await coordinator.getSimilarNotes(mdFile);
+        settingsService.push({ semanticLinkTrigger: "::" });
+        await coordinator.getSimilarNotes(mdFile);
+
+        expect(finder.findSimilarNotes).toHaveBeenCalledTimes(1);
+    });
+
+    it("does not invalidate the cache on a noteDisplayMode-only change", async () => {
+        const finder = makeFinder([]);
+        const mdFile = makeTFile("notes/foo.md", "md");
+        const vault = makeVault(new Map([["notes/foo.md", mdFile]]));
+        const settingsService = makeSettingsService();
+        const coordinator = new SimilarNoteCoordinator(
+            vault as Vault,
+            finder,
+            settingsService as ReturnType<typeof makeSettingsService>
+        );
+
+        await coordinator.getSimilarNotes(mdFile);
+        settingsService.push({ noteDisplayMode: "path" });
+        await coordinator.getSimilarNotes(mdFile);
+
+        expect(finder.findSimilarNotes).toHaveBeenCalledTimes(1);
+    });
+
+    it("discards and restarts a request whose settings changed before it resolved, without caching or emitting the stale response", async () => {
+        let resolveFirst!: (notes: SimilarNote[]) => void;
+        const findSimilarNotes = vi
+            .fn()
+            .mockImplementationOnce(
+                () => new Promise<SimilarNote[]>((resolve) => { resolveFirst = resolve; })
+            )
+            .mockResolvedValueOnce([]);
+        const finder = { findSimilarNotes };
+        const mdFile = makeTFile("notes/foo.md", "md");
+        const vault = makeVault(new Map([["notes/foo.md", mdFile]]));
+        const settingsService = makeSettingsService({ sidebarResultCount: 10 });
+        const coordinator = new SimilarNoteCoordinator(
+            vault as Vault,
+            finder,
+            settingsService as ReturnType<typeof makeSettingsService>
+        );
+
+        // Start a request; settings change while it is in flight (before the
+        // deferred findSimilarNotes call resolves). vault.cachedRead awaits
+        // a microtask first, so flush that before findSimilarNotes is invoked.
+        const pending = coordinator.getSimilarNotes(mdFile);
+        await Promise.resolve();
+        await Promise.resolve();
+        settingsService.push({ sidebarResultCount: 25 });
+        resolveFirst([]);
+        await pending;
+
+        // The old request must have restarted under the new generation —
+        // findSimilarNotes called a second time — rather than caching or
+        // returning the stale-generation response directly.
+        expect(findSimilarNotes).toHaveBeenCalledTimes(2);
+
+        // A subsequent call must be served from cache (no third call),
+        // proving the entry was stamped with the CURRENT generation, not
+        // an earlier one that would force another fetch.
+        await coordinator.getSimilarNotes(mdFile);
+        expect(findSimilarNotes).toHaveBeenCalledTimes(2);
     });
 });
 

@@ -7,7 +7,7 @@ import type { SimilarNote } from "@/domain/model/SimilarNote";
 import log from "loglevel";
 import type { TFile, Vault } from "obsidian";
 import { BehaviorSubject } from "rxjs";
-import type { SettingsService } from "./SettingsService";
+import type { SettingsService, SimilarNotesSettings } from "./SettingsService";
 
 /**
  * Minimal surface SimilarNoteCoordinator depends on. Structural interface so
@@ -35,6 +35,18 @@ const MAX_CACHE_SIZE = 20;
 export const INDEXABLE_TEXT_EXTENSIONS = new Set(["md", "txt"]);
 
 /**
+ * Settings fields that change what `getSimilarNotes` fetches or how it maps
+ * results. A change to any other field (`noteDisplayMode`,
+ * `semanticLinkTrigger`) must not invalidate the cache.
+ */
+const RETRIEVAL_AFFECTING_KEYS: ReadonlySet<keyof SimilarNotesSettings> = new Set([
+    "docindex",
+    "showSourceChunk",
+    "sidebarResultCount",
+    "bottomResultCount",
+]);
+
+/**
  * Drives the sidebar view-model.
  *
  * Reads the active note's content via `vault.cachedRead`, asks the injected
@@ -54,10 +66,14 @@ export class SimilarNoteCoordinator {
     });
     private cache = new Map<string, SimilarNoteCacheEntry>();
     /**
-     * Bumped on every settings change. Cache entries are stamped with the
-     * generation active when they were computed, so a stale entry from
-     * before a docindex/token/threshold/showSourceChunk change is never
-     * served — without enumerating each affected field individually.
+     * Bumped only when a field affecting retrieval or the mapped entries
+     * changes: `docindex`, `showSourceChunk`, `sidebarResultCount`,
+     * `bottomResultCount`. Cache entries are stamped with the generation
+     * captured when the request started, so a response computed under
+     * settings that changed mid-flight is never cached or emitted as
+     * current — and a stale entry from before such a change is never
+     * served. View-only fields (`noteDisplayMode`, `semanticLinkTrigger`)
+     * do not bump this counter.
      */
     private settingsGeneration = 0;
 
@@ -76,8 +92,12 @@ export class SimilarNoteCoordinator {
 
         this.settingsService
             .getNewSettingsObservable()
-            .subscribe(() => {
-                this.settingsGeneration++;
+            .subscribe((changed) => {
+                if (Object.keys(changed).some((key) =>
+                    RETRIEVAL_AFFECTING_KEYS.has(key as keyof SimilarNotesSettings)
+                )) {
+                    this.settingsGeneration++;
+                }
 
                 const s = this.settingsService.get();
                 this.noteBottomViewModel$.next({
@@ -128,6 +148,11 @@ export class SimilarNoteCoordinator {
             return cacheEntry.notes;
         }
 
+        // Captured before any await: the generation this request is
+        // computing under. If it no longer matches `this.settingsGeneration`
+        // once the awaited work resolves, settings changed mid-flight and
+        // the result must not be cached or treated as current.
+        const requestGeneration = this.settingsGeneration;
         const settings = this.settingsService.get();
         const content = await this.vault.cachedRead(file);
         const note = new Note(file.path, file.basename, content, []);
@@ -139,6 +164,15 @@ export class SimilarNoteCoordinator {
             note,
             maxResultCount
         );
+
+        if (requestGeneration !== this.settingsGeneration) {
+            // Settings changed while this request was in flight. `settings`,
+            // `maxResultCount`, and `similarNotes` all reflect the stale
+            // generation — restart under the current settings instead of
+            // caching or returning a response computed under settings that
+            // no longer apply.
+            return this.getSimilarNotes(file);
+        }
 
         const showSourceChunk = settings.showSourceChunk;
         const similarNoteEntries = similarNotes
@@ -170,7 +204,7 @@ export class SimilarNoteCoordinator {
 
         this.cache.set(file.path, {
             mtime: file.stat.mtime,
-            settingsGeneration: this.settingsGeneration,
+            settingsGeneration: requestGeneration,
             notes: similarNoteEntries,
         });
         if (this.cache.size > MAX_CACHE_SIZE) {
