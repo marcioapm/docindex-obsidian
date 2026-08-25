@@ -1,7 +1,3 @@
-/**
- * toDomainHit media field mapping and isHitWire media field validation.
- * Kept separate to stay within the 400-line ESLint limit for DocindexClient.test.ts.
- */
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { DocindexClient } from "../DocindexClient";
 import type { DocindexSettings } from "../types";
@@ -33,7 +29,6 @@ function makeClient(overrides: Partial<DocindexSettings> = {}, requestFn?: Retur
     return { client, requestFn: fn };
 }
 
-/** Minimal valid wire hit. Extra fields are merged on top. */
 function makeHitJson(extra: Record<string, unknown> = {}) {
     return { path: "n.md", title: "N", heading_path: [], snippet: "s", score: 0.5, chunk_id: "c", ...extra };
 }
@@ -115,37 +110,89 @@ describe("DocindexClient — isHitWire media field validation", () => {
         expect(res.hits).toHaveLength(1);
     });
 
-    it("rejects a hit where a present media_type has an unrecognised value", async () => {
+    for (const { name, field, valid, invalid } of [
+        {
+            name: "rejects a hit where a present media_type has the wrong type",
+            field: "media_type",
+            valid: "pdf",
+            invalid: 42,
+        },
+        {
+            name: "rejects a hit where truncated is present but not a boolean",
+            field: "truncated",
+            valid: true,
+            invalid: "yes",
+        },
+        {
+            name: "rejects a hit where mime_type is present but not a string or null",
+            field: "mime_type",
+            valid: "application/pdf",
+            invalid: 42,
+        },
+        {
+            name: "rejects a hit where media_start is present but not a number or null",
+            field: "media_start",
+            valid: 0,
+            invalid: "first",
+        },
+        {
+            name: "rejects a hit where media_end is present but not a number or null",
+            field: "media_end",
+            valid: 1,
+            invalid: true,
+        },
+        {
+            name: "rejects a hit where media_unit is present but not a string or null",
+            field: "media_unit",
+            valid: "page",
+            invalid: 42,
+        },
+    ]) {
+        it(name, async () => {
+            const validClient = makeClient({}, makeResponse({ [field]: valid })).client;
+            await expect(validClient.search("q")).resolves.toMatchObject({ hits: [{ path: "n.md" }] });
+
+            const invalidClient = makeClient({}, makeResponse({ [field]: invalid })).client;
+            await expect(invalidClient.search("q")).rejects.toMatchObject({ kind: "malformed" });
+        });
+    }
+});
+
+describe("DocindexClient — audio/video and unrecognized media_type", () => {
+    it("maps an audio hit to mediaType 'audio' without discarding other hits in the response", async () => {
+        const requestFn = vi.fn().mockResolvedValue({
+            status: 200,
+            headers: {},
+            json: {
+                hits: [
+                    makeHitJson({ path: "song.mp3", media_type: "audio" }),
+                    makeHitJson({ path: "note.md" }),
+                ],
+            },
+        });
+        const { client } = makeClient({}, requestFn);
+        const res = await client.search("q");
+        expect(res.hits).toHaveLength(2);
+        expect(res.hits[0].mediaType).toBe("audio");
+        expect(res.hits[1].mediaType).toBe("text");
+    });
+
+    it("maps a video hit to mediaType 'video'", async () => {
         const { client } = makeClient({}, makeResponse({ media_type: "video" }));
-        await expect(client.search("q")).rejects.toMatchObject({ kind: "malformed" });
+        const res = await client.search("q");
+        expect(res.hits[0].mediaType).toBe("video");
     });
 
-    it("rejects a hit where truncated is present but not a boolean", async () => {
-        const { client } = makeClient({}, makeResponse({ truncated: "yes" }));
-        await expect(client.search("q")).rejects.toMatchObject({ kind: "malformed" });
-    });
-
-    it("rejects a hit where mime_type is present but not a string or null", async () => {
-        const { client } = makeClient({}, makeResponse({ mime_type: 42 }));
-        await expect(client.search("q")).rejects.toMatchObject({ kind: "malformed" });
-    });
-
-    it("rejects a hit where media_start is present but not a number or null", async () => {
-        const { client } = makeClient({}, makeResponse({ media_start: "first" }));
-        await expect(client.search("q")).rejects.toMatchObject({ kind: "malformed" });
-    });
-
-    it("rejects a hit where media_end is present but not a number or null", async () => {
-        const { client } = makeClient({}, makeResponse({ media_end: true }));
-        await expect(client.search("q")).rejects.toMatchObject({ kind: "malformed" });
+    it("degrades a structurally valid but unrecognized media_type string to 'other' instead of rejecting the response", async () => {
+        const { client } = makeClient({}, makeResponse({ media_type: "spreadsheet" }));
+        const res = await client.search("q");
+        expect(res.hits).toHaveLength(1);
+        expect(res.hits[0].mediaType).toBe("other");
     });
 });
 
 describe("DocindexClient — isHitWire null-as-absent semantics", () => {
-    it("accepts a payload with all media fields explicitly null", async () => {
-        // Rust serde_json with Option<T> and no skip_serializing_if emits null rather
-        // than omitting absent fields. isHitWire uses `!= null` (not `!== undefined`)
-        // so null passes the same as undefined for every optional media field.
+    it("accepts a payload with all media fields explicitly null and maps every field to its null-equivalent domain value", async () => {
         const { client } = makeClient(
             {},
             makeResponse({
@@ -159,6 +206,12 @@ describe("DocindexClient — isHitWire null-as-absent semantics", () => {
         );
         const res = await client.search("q");
         expect(res.hits).toHaveLength(1);
-        expect(res.hits[0].mediaType).toBe("text");
+        const h = res.hits[0];
+        expect(h.mediaType).toBe("text");
+        expect(h.mimeType).toBeNull();
+        expect(h.mediaStart).toBeNull();
+        expect(h.mediaEnd).toBeNull();
+        expect(h.mediaUnit).toBeNull();
+        expect(h.truncated).toBeUndefined();
     });
 });

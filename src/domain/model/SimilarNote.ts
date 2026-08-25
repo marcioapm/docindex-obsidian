@@ -4,7 +4,13 @@ export class SimilarNote {
     constructor(
         public readonly title: string,
         public readonly path: string,
-        public readonly similarity: number,
+        /**
+         * Calibrated 0..1 relevance score, or `undefined` when the server
+         * didn't supply `score_normalized` (pre-v0.3) or the hit is media
+         * with a rank-derived score. Renderers must treat `undefined` as
+         * "no percentage to show", not as zero relevance.
+         */
+        public readonly similarity: number | undefined,
         public readonly similarChunk: string,
         public readonly sourceChunk: string,
         /**

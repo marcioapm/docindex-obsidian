@@ -1,19 +1,17 @@
 import { Notice, requestUrl, type RequestUrlParam, type RequestUrlResponse } from "obsidian";
 import log from "loglevel";
+import { sanitizeErrorForLog } from "@/utils/errorSanitizer";
 import {
     getDisplayScore,
+    isThresholdEligible,
+    KNOWN_MEDIA_TYPES,
     type DocindexHit,
     type DocindexHitWire,
     type DocindexSearchResponse,
     type DocindexSearchResponseWire,
     type DocindexSettings,
-    type MediaType,
 } from "./types";
 
-/**
- * Errors surfaced by the client. Kept narrow so callers can decide which to
- * show to the user vs log.
- */
 export type DocindexErrorKind =
     | "not-configured"
     | "network"
@@ -54,7 +52,6 @@ export class DocindexClient {
         return s.enabled && s.backendUrl.trim().length > 0 && s.bearerToken.trim().length > 0;
     }
 
-    /** Re-enable after settings changed. */
     reset(): void {
         this.disabledForSession = false;
     }
@@ -100,8 +97,7 @@ export class DocindexClient {
                 throw: false,
             });
         } catch (err) {
-            const detail = err instanceof Error ? err.message : String(err);
-            log.debug(`[docindex] network error: ${detail}`);
+            log.debug(`[docindex] network error: ${sanitizeErrorForLog(err, settings.bearerToken)}`);
             this.notify("docindex: backend unreachable (Tailscale?)");
             throw new DocindexError("network", "backend unreachable");
         }
@@ -147,9 +143,7 @@ function toDomainHit(wire: DocindexHitWire): DocindexHit {
     if (Array.isArray(wire.heading_path)) {
         headingPath = wire.heading_path;
     } else if (typeof wire.heading_path === "string" && wire.heading_path.length > 0) {
-        // Server currently emits a pre-joined string like
-        // "foo.md - Section > Subsection". Split on " > " and drop any
-        // leading filename token ending in " - ".
+        // The server may prefix the heading chain with "filename - ".
         const first = wire.heading_path.split(" - ", 2);
         const body = first.length === 2 ? first[1] : first[0];
         headingPath = body.split(" > ").filter((s) => s.length > 0);
@@ -163,13 +157,17 @@ function toDomainHit(wire: DocindexHitWire): DocindexHit {
         scoreRrf: wire.score_rrf,
         scoreNormalized: wire.score_normalized,
         chunkId: String(wire.chunk_id),
-        // Default to "text" — old servers pre-dating media indexing don't emit media_type.
-        mediaType: wire.media_type ?? "text",
+        // Missing and unknown server variants degrade without rejecting other hits.
+        mediaType: wire.media_type == null
+            ? "text"
+            : KNOWN_MEDIA_TYPES.has(wire.media_type)
+                ? (wire.media_type as DocindexHit["mediaType"])
+                : "other",
         mimeType: wire.mime_type,
         mediaStart: wire.media_start,
         mediaEnd: wire.media_end,
         mediaUnit: wire.media_unit,
-        truncated: wire.truncated,
+        truncated: wire.truncated ?? undefined,
     };
 }
 
@@ -177,32 +175,30 @@ function isRecord(v: unknown): v is Record<string, unknown> {
     return typeof v === "object" && v !== null && !Array.isArray(v);
 }
 
-/**
- * Drops hits whose display score is below `threshold`. Threshold ≤ 0 is a
- * no-op so users who disable filtering see everything the server returned.
- *
- * Uses `getDisplayScore`, which falls back to `score` when the server
- * predates v0.3 and didn't emit `score_normalized`. That fallback is lossy
- * (RRF scores aren't in [0, 1]), so during rollout the threshold behaves
- * roughly like "keep what the server ranked" — still better than nothing.
- */
+/** Filters calibrated text scores; media and uncalibrated hits always pass. */
 export function filterByThreshold(hits: DocindexHit[], threshold: number): DocindexHit[] {
     if (!(threshold > 0)) return hits;
-    return hits.filter((h) => getDisplayScore(h) >= threshold);
+    return hits.filter((h) => {
+        if (!isThresholdEligible(h)) return true;
+        const score = getDisplayScore(h);
+        return score !== undefined && score >= threshold;
+    });
 }
-
-/** Valid values for the `media_type` field. Used in the runtime guard. */
-const VALID_MEDIA_TYPES: ReadonlySet<string> = new Set<MediaType>(["text", "image", "pdf"]);
 
 function isHitWire(v: unknown): v is DocindexHitWire {
     if (!isRecord(v)) return false;
     if (typeof v.path !== "string") return false;
     if (typeof v.title !== "string") return false;
     if (typeof v.snippet !== "string") return false;
-    if (typeof v.score !== "number") return false;
+    if (typeof v.score !== "number" || !Number.isFinite(v.score)) return false;
     if (typeof v.chunk_id !== "string" && typeof v.chunk_id !== "number") return false;
-    if (v.score_rrf !== undefined && typeof v.score_rrf !== "number") return false;
-    if (v.score_normalized !== undefined && typeof v.score_normalized !== "number") return false;
+    if (v.score_rrf !== undefined && (typeof v.score_rrf !== "number" || !Number.isFinite(v.score_rrf))) {
+        return false;
+    }
+    if (v.score_normalized !== undefined) {
+        if (typeof v.score_normalized !== "number" || !Number.isFinite(v.score_normalized)) return false;
+        if (v.score_normalized < 0 || v.score_normalized > 1) return false;
+    }
     if (v.heading_path !== null && v.heading_path !== undefined) {
         if (Array.isArray(v.heading_path)) {
             if (!v.heading_path.every((x) => typeof x === "string")) return false;
@@ -210,10 +206,8 @@ function isHitWire(v: unknown): v is DocindexHitWire {
             return false;
         }
     }
-    // Media fields: all optional. null and undefined both mean "not applicable"
-    // (`!= null` catches both). A present non-null value with the wrong type fails
-    // immediately so server regressions surface before they corrupt domain state.
-    if (v.media_type != null && !VALID_MEDIA_TYPES.has(v.media_type as string)) return false;
+    // Unknown media_type strings are valid and map to "other".
+    if (v.media_type != null && typeof v.media_type !== "string") return false;
     if (v.mime_type !== undefined && v.mime_type !== null && typeof v.mime_type !== "string") return false;
     if (v.media_start !== undefined && v.media_start !== null && typeof v.media_start !== "number") return false;
     if (v.media_end !== undefined && v.media_end !== null && typeof v.media_end !== "number") return false;

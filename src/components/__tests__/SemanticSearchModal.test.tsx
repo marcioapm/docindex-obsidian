@@ -1,18 +1,20 @@
 /**
- * Tests for the media-label render path in SearchResultItem.
- *
  * SemanticSearchModal extends Obsidian's Modal and mounts via createRoot on
  * a runtime-provided DOM element — that flow requires an Obsidian desktop
- * runtime and cannot be exercised here. SearchResultItem is a pure function
- * component with no Obsidian dependencies; exporting it makes these tests
- * possible without faking the full runtime or the debounce lifecycle.
+ * runtime and cannot be exercised here. `SearchResultItem` and
+ * `useSemanticSearch` are both plain functions with no Obsidian
+ * dependencies, so the media-label render path and the debounced-search
+ * generation guard are testable directly.
  */
 import "@testing-library/jest-dom/vitest";
-import { render, screen } from "@testing-library/react";
-import { describe, expect, it, vi } from "vitest";
-import { SearchResultItem } from "../SemanticSearchModal";
+import { render, renderHook, screen, waitFor } from "@testing-library/react";
+import { act } from "react";
+import { beforeEach, afterEach, describe, expect, it, vi } from "vitest";
+import log from "loglevel";
+import { SearchResultItem, useSemanticSearch } from "../SemanticSearchModal";
 import { SimilarNote } from "@/domain/model/SimilarNote";
 import type { TFile } from "obsidian";
+import type { TextSearchResult } from "@/adapter/docindex";
 
 vi.mock("obsidian");
 
@@ -98,5 +100,261 @@ describe("SearchResultItem — media label rendering", () => {
         render(<SearchResultItem {...baseProps(note, makeFile("notes/plain.md"))} />);
         expect(screen.getByText("Plain Note")).toBeInTheDocument();
         expect(document.querySelector(".docindex-media-type")).not.toBeInTheDocument();
+    });
+
+    it("renders no percentage flair for a media hit with similarity undefined", () => {
+        // RemoteSearchService withholds similarity for media hits even when
+        // score_normalized is present (rank-derived, not query-dependent).
+        const note = new SimilarNote(
+            "Scanned Report",
+            "reports/scan.pdf",
+            undefined,
+            "PDF snippet",
+            "source",
+            [],
+            [],
+            "pdf:0",
+            "pdf",
+            0,
+            1,
+            false
+        );
+        render(<SearchResultItem {...baseProps(note, makeFile("reports/scan.pdf"))} />);
+        expect(document.querySelector(".semantic-search-score")).not.toBeInTheDocument();
+    });
+});
+
+function makeResult(paths: string[]): TextSearchResult {
+    return {
+        similarNotes: paths.map(
+            (path) => new SimilarNote(path, path, 0.5, "snippet", "source", [], [], path)
+        ),
+        tokenCount: 0,
+        maxTokens: 0,
+        isOverLimit: false,
+    };
+}
+
+/** Deferred promise so a test can control exactly when a search resolves. */
+function deferred<T>() {
+    let resolve!: (value: T) => void;
+    let reject!: (err: unknown) => void;
+    const promise = new Promise<T>((res, rej) => {
+        resolve = res;
+        reject = rej;
+    });
+    return { promise, resolve, reject };
+}
+
+describe("useSemanticSearch — out-of-order request guard", () => {
+    beforeEach(() => {
+        vi.useFakeTimers();
+    });
+
+    afterEach(() => {
+        vi.useRealTimers();
+    });
+
+    it("does not let a slower older query overwrite a faster newer query's results", async () => {
+        const first = deferred<TextSearchResult>();
+        const second = deferred<TextSearchResult>();
+        const findSimilarNotesFromText = vi
+            .fn()
+            .mockReturnValueOnce(first.promise)
+            .mockReturnValueOnce(second.promise);
+        const service = { findSimilarNotesFromText };
+
+        const { result } = renderHook(() => useSemanticSearch(service));
+
+        act(() => result.current.setQuery("first query"));
+        await act(async () => {
+            await vi.advanceTimersByTimeAsync(300);
+        });
+
+        act(() => result.current.setQuery("second query"));
+        await act(async () => {
+            await vi.advanceTimersByTimeAsync(300);
+        });
+
+        expect(findSimilarNotesFromText).toHaveBeenCalledTimes(2);
+
+        // Newer request (query B) resolves first.
+        await act(async () => {
+            second.resolve(makeResult(["b.md"]));
+            await Promise.resolve();
+        });
+        expect(result.current.results.map((n) => n.path)).toEqual(["b.md"]);
+
+        // Older request (query A) resolves after — must not overwrite.
+        await act(async () => {
+            first.resolve(makeResult(["a.md"]));
+            await Promise.resolve();
+        });
+        expect(result.current.results.map((n) => n.path)).toEqual(["b.md"]);
+    });
+
+    it("does not clear the spinner from a stale request's finally while a newer request is in flight", async () => {
+        const first = deferred<TextSearchResult>();
+        const second = deferred<TextSearchResult>();
+        const findSimilarNotesFromText = vi
+            .fn()
+            .mockReturnValueOnce(first.promise)
+            .mockReturnValueOnce(second.promise);
+        const service = { findSimilarNotesFromText };
+
+        const { result } = renderHook(() => useSemanticSearch(service));
+
+        act(() => result.current.setQuery("first query"));
+        await act(async () => {
+            await vi.advanceTimersByTimeAsync(300);
+        });
+        act(() => result.current.setQuery("second query"));
+        await act(async () => {
+            await vi.advanceTimersByTimeAsync(300);
+        });
+
+        expect(result.current.isSearching).toBe(true);
+
+        // The stale (first) request settles while the second is still pending —
+        // its `finally` must not clear the spinner.
+        await act(async () => {
+            first.resolve(makeResult(["a.md"]));
+            await Promise.resolve();
+        });
+        expect(result.current.isSearching).toBe(true);
+
+        await act(async () => {
+            second.resolve(makeResult(["b.md"]));
+            await Promise.resolve();
+        });
+        expect(result.current.isSearching).toBe(false);
+    });
+
+    it("invalidates the in-flight request generation when the query is shortened below MIN_SEARCH_LENGTH", async () => {
+        const first = deferred<TextSearchResult>();
+        const findSimilarNotesFromText = vi.fn().mockReturnValueOnce(first.promise);
+        const service = { findSimilarNotesFromText };
+
+        const { result } = renderHook(() => useSemanticSearch(service));
+
+        act(() => result.current.setQuery("first query"));
+        await act(async () => {
+            await vi.advanceTimersByTimeAsync(300);
+        });
+
+        // Shorten below MIN_SEARCH_LENGTH — the short-query branch runs
+        // synchronously and must bump the generation counter too.
+        act(() => result.current.setQuery("a"));
+        await act(async () => {
+            await vi.advanceTimersByTimeAsync(300);
+        });
+        expect(result.current.results).toEqual([]);
+
+        // The stale in-flight request from "first query" resolving now must
+        // not repopulate results after the user shortened the query.
+        await act(async () => {
+            first.resolve(makeResult(["a.md"]));
+            await Promise.resolve();
+        });
+        expect(result.current.results).toEqual([]);
+    });
+
+    it("discards a stale result that resolves before the replacement debounce fires", async () => {
+        const first = deferred<TextSearchResult>();
+        const second = deferred<TextSearchResult>();
+        const findSimilarNotesFromText = vi
+            .fn()
+            .mockReturnValueOnce(first.promise)
+            .mockReturnValueOnce(second.promise);
+        const service = { findSimilarNotesFromText };
+
+        const { result } = renderHook(() => useSemanticSearch(service));
+
+        act(() => result.current.setQuery("first query"));
+        await act(async () => {
+            await vi.advanceTimersByTimeAsync(300);
+        });
+        expect(findSimilarNotesFromText).toHaveBeenCalledTimes(1);
+
+        // Query changes; the replacement debounce has NOT fired yet, so no
+        // second request exists. The stale first request resolves now.
+        act(() => result.current.setQuery("second query"));
+        await act(async () => {
+            first.resolve(makeResult(["a.md"]));
+            await Promise.resolve();
+        });
+
+        expect(result.current.results).toEqual([]);
+        expect(result.current.tokenWarning).toBeNull();
+
+        // Advance the debounce so the new query's request fires and resolves.
+        await act(async () => {
+            await vi.advanceTimersByTimeAsync(300);
+        });
+        expect(findSimilarNotesFromText).toHaveBeenCalledTimes(2);
+        await act(async () => {
+            second.resolve(makeResult(["b.md"]));
+            await Promise.resolve();
+        });
+        expect(result.current.results.map((n) => n.path)).toEqual(["b.md"]);
+    });
+
+    it("discards a stale over-limit warning that resolves before the replacement debounce fires", async () => {
+        const first = deferred<TextSearchResult>();
+        const findSimilarNotesFromText = vi.fn().mockReturnValueOnce(first.promise);
+        const service = { findSimilarNotesFromText };
+
+        const { result } = renderHook(() => useSemanticSearch(service));
+
+        act(() => result.current.setQuery("first query"));
+        await act(async () => {
+            await vi.advanceTimersByTimeAsync(300);
+        });
+
+        act(() => result.current.setQuery("second query"));
+        await act(async () => {
+            first.resolve({
+                similarNotes: [],
+                tokenCount: 999,
+                maxTokens: 500,
+                isOverLimit: true,
+            });
+            await Promise.resolve();
+        });
+
+        expect(result.current.tokenWarning).toBeNull();
+    });
+});
+
+describe("useSemanticSearch — token redaction on search-failure logging", () => {
+    beforeEach(() => {
+        vi.useFakeTimers();
+    });
+
+    afterEach(() => {
+        vi.useRealTimers();
+    });
+
+    it("does not pass a token embedded in a rejected search error to any loglevel call", async () => {
+        const errorSpy = vi.spyOn(log, "error");
+        const secret = "modal-secret-token";
+        const findSimilarNotesFromText = vi
+            .fn()
+            .mockRejectedValue(new Error(`request failed: Authorization: Bearer ${secret}`));
+        const service = { findSimilarNotesFromText };
+
+        const { result } = renderHook(() => useSemanticSearch(service));
+        act(() => result.current.setQuery("search query"));
+        await act(async () => {
+            await vi.advanceTimersByTimeAsync(300);
+        });
+
+        for (const call of errorSpy.mock.calls) {
+            for (const arg of call) {
+                const serialized = typeof arg === "string" ? arg : JSON.stringify(arg);
+                expect(serialized).not.toContain(secret);
+            }
+        }
+        errorSpy.mockRestore();
     });
 });

@@ -1,14 +1,16 @@
-import { getNoteDisplayText } from "@/utils/displayUtils";
+import { getNoteDisplayText, formatSimilarityPercent } from "@/utils/displayUtils";
 import type { MarkdownView, TFile, Workspace } from "obsidian";
 import { Menu } from "obsidian";
 import { useEffect, useLayoutEffect, useState } from "react";
 import type { Observable } from "rxjs";
 import { formatMediaLabel } from "@/adapter/docindex";
+import type { MediaType } from "@/adapter/docindex";
 
 export interface SimilarNoteEntry {
     file: TFile;
     title: string;
-    similarity: number;
+    /** Calibrated 0..1 relevance score, when available. */
+    similarity: number | undefined;
     preview: string;
     sourceChunk?: string;
     /**
@@ -23,8 +25,8 @@ export interface SimilarNoteEntry {
      * heading; otherwise the note opens at the top.
      */
     headingPath?: string[];
-    /** Content category of the top-scoring chunk. Defaults to "text". */
-    mediaType?: "text" | "image" | "pdf";
+    /** Content category of the top-scoring chunk. */
+    mediaType?: MediaType;
     /** 0-based start page of the embedded range (PDFs). Null = not paginated. */
     mediaStart?: number | null;
     /** 0-based exclusive end page of the embedded range (PDFs). Null = not paginated. */
@@ -251,9 +253,11 @@ const SearchResult = ({
                     {mediaLabel && (
                         <div className="tree-item-flair docindex-media-type">{mediaLabel}</div>
                     )}
-                    <div className="tree-item-flair">
-                        {`${Math.round(note.similarity * 100)}%`}
-                    </div>
+                    {formatSimilarityPercent(note.similarity) && (
+                        <div className="tree-item-flair">
+                            {formatSimilarityPercent(note.similarity)}
+                        </div>
+                    )}
                 </div>
             </div>
             {shouldRender && (

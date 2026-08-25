@@ -1,4 +1,5 @@
-import { getNoteDisplayText } from "@/utils/displayUtils";
+import { getNoteDisplayText, formatSimilarityPercent } from "@/utils/displayUtils";
+import { sanitizeErrorForLog } from "@/utils/errorSanitizer";
 import type { App } from "obsidian";
 import { MarkdownView, Modal, TFile } from "obsidian";
 import log from "loglevel";
@@ -8,16 +9,12 @@ import type { SimilarNote } from "@/domain/model/SimilarNote";
 import type { TextSearchResult } from "@/adapter/docindex";
 import { formatMediaLabel } from "@/adapter/docindex";
 
-/**
- * Minimal structural surface the modal depends on. Satisfied by
- * `RemoteSearchService`.
- */
 interface TextSearchServiceLike {
     findSimilarNotesFromText(text: string, limit?: number): Promise<TextSearchResult>;
 }
 
-const MIN_SEARCH_LENGTH = 3;
-const DEBOUNCE_MS = 300;
+export const MIN_SEARCH_LENGTH = 3;
+export const DEBOUNCE_MS = 300;
 
 // Platform-specific modifier keys
 const isMac = typeof navigator !== "undefined" && navigator.platform.includes("Mac");
@@ -129,9 +126,11 @@ export const SearchResultItem: React.FC<SearchResultItemProps> = ({
                 )}
             </div>
             <div className="suggestion-aux">
-                <span className="suggestion-flair semantic-search-score">
-                    {`${Math.round(note.similarity * 100)}%`}
-                </span>
+                {formatSimilarityPercent(note.similarity) && (
+                    <span className="suggestion-flair semantic-search-score">
+                        {formatSimilarityPercent(note.similarity)}
+                    </span>
+                )}
             </div>
         </div>
     );
@@ -144,7 +143,8 @@ interface SemanticSearchContentProps {
     onClose: () => void;
 }
 
-function useSemanticSearch(textSearchService: TextSearchServiceLike) {
+/** Debounced remote search protected from out-of-order completions. */
+export function useSemanticSearch(textSearchService: TextSearchServiceLike) {
     const [query, setQuery] = useState("");
     const [results, setResults] = useState<SimilarNote[]>([]);
     const [selectedIndex, setSelectedIndex] = useState(0);
@@ -156,6 +156,8 @@ function useSemanticSearch(textSearchService: TextSearchServiceLike) {
     const [selectionSource, setSelectionSource] =
         useState<"keyboard" | "reset">("reset");
     const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+    // Incremented before debounce scheduling so old responses become stale immediately.
+    const generationRef = useRef(0);
 
     const selectByKeyboard = useCallback((updater: (prev: number) => number) => {
         setSelectionSource("keyboard");
@@ -163,17 +165,12 @@ function useSemanticSearch(textSearchService: TextSearchServiceLike) {
     }, []);
 
     const performSearch = useCallback(
-        async (searchQuery: string) => {
-            if (searchQuery.length < MIN_SEARCH_LENGTH) {
-                setResults([]);
-                setTokenWarning(null);
-                return;
-            }
-
+        async (searchQuery: string, generation: number) => {
             setIsSearching(true);
             try {
                 const searchResult =
                     await textSearchService.findSimilarNotesFromText(searchQuery);
+                if (generationRef.current !== generation) return;
 
                 if (searchResult.isOverLimit) {
                     setTokenWarning(
@@ -186,10 +183,11 @@ function useSemanticSearch(textSearchService: TextSearchServiceLike) {
                 setSelectionSource("reset");
                 setSelectedIndex(0);
             } catch (error) {
-                log.error("[SemanticSearchModal] search failed:", error);
+                if (generationRef.current !== generation) return;
+                log.error(`[SemanticSearchModal] search failed: ${sanitizeErrorForLog(error)}`);
                 setResults([]);
             } finally {
-                setIsSearching(false);
+                if (generationRef.current === generation) setIsSearching(false);
             }
         },
         [textSearchService]
@@ -197,11 +195,27 @@ function useSemanticSearch(textSearchService: TextSearchServiceLike) {
 
     useEffect(() => {
         if (debounceRef.current) clearTimeout(debounceRef.current);
-        debounceRef.current = setTimeout(() => performSearch(query), DEBOUNCE_MS);
+        const generation = ++generationRef.current;
+
+        if (query.length < MIN_SEARCH_LENGTH) {
+            setResults([]);
+            setTokenWarning(null);
+            return;
+        }
+
+        debounceRef.current = setTimeout(() => {
+            void performSearch(query, generation);
+        }, DEBOUNCE_MS);
         return () => {
             if (debounceRef.current) clearTimeout(debounceRef.current);
         };
     }, [query, performSearch]);
+
+    useEffect(() => {
+        return () => {
+            generationRef.current++;
+        };
+    }, []);
 
     return {
         query,

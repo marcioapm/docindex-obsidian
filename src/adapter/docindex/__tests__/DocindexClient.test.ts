@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import log from "loglevel";
 import { DocindexClient } from "../DocindexClient";
 import type { DocindexSettings } from "../types";
 
@@ -210,6 +211,41 @@ describe("DocindexClient — server errors", () => {
     });
 });
 
+describe("DocindexClient — token redaction on network-error logging", () => {
+    it("does not pass the bearer token to any loglevel call when the transport error's message contains it", async () => {
+        const debugSpy = vi.spyOn(log, "debug");
+        const errorSpy = vi.spyOn(log, "error");
+        const warnSpy = vi.spyOn(log, "warn");
+        const infoSpy = vi.spyOn(log, "info");
+
+        const secret = "super-secret-bearer-token";
+        // Simulate an HTTP client wrapper that embeds the outgoing request
+        // (including the Authorization header) in its rejection message.
+        const requestFn = vi
+            .fn()
+            .mockRejectedValue(new Error(`connect failed for request with Authorization: Bearer ${secret}`));
+        const { client } = makeClient({ bearerToken: secret }, requestFn);
+
+        await expect(client.search("q")).rejects.toMatchObject({ kind: "network" });
+
+        for (const spy of [debugSpy, errorSpy, warnSpy, infoSpy]) {
+            for (const call of spy.mock.calls) {
+                for (const arg of call) {
+                    const serialized = typeof arg === "string" ? arg : JSON.stringify(arg);
+                    expect(serialized).not.toContain(secret);
+                }
+            }
+        }
+        // Also assert against the Notice text captured by the mock above.
+        expect(noticeMessages.join(" ")).not.toContain(secret);
+
+        debugSpy.mockRestore();
+        errorSpy.mockRestore();
+        warnSpy.mockRestore();
+        infoSpy.mockRestore();
+    });
+});
+
 describe("DocindexClient — malformed responses", () => {
     it("surfaces a Notice and disables the provider on malformed JSON", async () => {
         const requestFn = vi.fn().mockResolvedValue({ status: 200, headers: {}, json: { not: "a hit list" } });
@@ -277,22 +313,101 @@ describe("DocindexClient — URL handling and relevance threshold", () => {
         expect(res.hits).toHaveLength(1);
     });
 
-    it("falls back to score when score_normalized is absent (old server)", async () => {
-        // With an old server, hit.score is the RRF value (not in [0,1]). Setting
-        // a tiny threshold should still let high-RRF hits through; setting a
-        // huge one filters everything. This keeps pre-v0.3 servers usable.
+    it("does not threshold a legacy response lacking score_normalized, even at the shipped default", async () => {
+        // Real RRF values observed from a legacy deployment; all below the
+        // shipped default (0.4). Raw RRF must never be compared against the
+        // [0,1] threshold, so all three hits must survive.
         const requestFn = vi.fn().mockResolvedValue({
             status: 200,
             headers: {},
             json: {
                 hits: [
-                    { path: "a.md", title: "a", heading_path: [], snippet: "", score: 0.03, chunk_id: "1" },
-                    { path: "b.md", title: "b", heading_path: [], snippet: "", score: 0.01, chunk_id: "2" },
+                    { path: "a.md", title: "a", heading_path: [], snippet: "", score: 0.01639, chunk_id: "1" },
+                    { path: "b.md", title: "b", heading_path: [], snippet: "", score: 0.01613, chunk_id: "2" },
+                    { path: "c.md", title: "c", heading_path: [], snippet: "", score: 0.01587, chunk_id: "3" },
                 ],
             },
         });
-        const { client } = makeClient({ relevanceThreshold: 0.02 }, requestFn);
+        const { client } = makeClient({ relevanceThreshold: 0.4 }, requestFn);
         const res = await client.search("q");
-        expect(res.hits.map((h) => h.path)).toEqual(["a.md"]);
+        expect(res.hits.map((h) => h.path)).toEqual(["a.md", "b.md", "c.md"]);
+        expect(res.hits.every((h) => h.scoreNormalized === undefined)).toBe(true);
+    });
+
+    it("does not threshold a media hit even when scoreNormalized is present and below the cutoff", async () => {
+        // Media scoreNormalized is rank-derived, not query-dependent — the
+        // relevance threshold must not apply to it regardless of value.
+        const requestFn = vi.fn().mockResolvedValue({
+            status: 200,
+            headers: {},
+            json: {
+                hits: [
+                    {
+                        path: "scan.pdf",
+                        title: "scan",
+                        heading_path: [],
+                        snippet: "",
+                        score: 0.05,
+                        score_normalized: 0.05,
+                        chunk_id: "1",
+                        media_type: "pdf",
+                    },
+                ],
+            },
+        });
+        const { client } = makeClient({ relevanceThreshold: 0.4 }, requestFn);
+        const res = await client.search("q");
+        expect(res.hits.map((h) => h.path)).toEqual(["scan.pdf"]);
+    });
+});
+
+describe("DocindexClient — score validation", () => {
+    it.each([
+        ["NaN", NaN],
+        ["Infinity", Infinity],
+        ["-Infinity", -Infinity],
+    ])("rejects a hit whose score is %s", async (_label, score) => {
+        const requestFn = vi.fn().mockResolvedValue({
+            status: 200,
+            headers: {},
+            json: { hits: [{ path: "a.md", title: "a", heading_path: [], snippet: "", score, chunk_id: "1" }] },
+        });
+        const { client } = makeClient({}, requestFn);
+        await expect(client.search("q")).rejects.toMatchObject({ kind: "malformed" });
+    });
+
+    it.each([
+        ["below 0", -0.1],
+        ["above 1", 1.1],
+        ["NaN", NaN],
+        ["Infinity", Infinity],
+    ])("rejects a hit whose score_normalized is %s", async (_label, score_normalized) => {
+        const requestFn = vi.fn().mockResolvedValue({
+            status: 200,
+            headers: {},
+            json: {
+                hits: [
+                    { path: "a.md", title: "a", heading_path: [], snippet: "", score: 0.5, score_normalized, chunk_id: "1" },
+                ],
+            },
+        });
+        const { client } = makeClient({}, requestFn);
+        await expect(client.search("q")).rejects.toMatchObject({ kind: "malformed" });
+    });
+
+    it("accepts score_normalized at the boundaries 0 and 1", async () => {
+        const requestFn = vi.fn().mockResolvedValue({
+            status: 200,
+            headers: {},
+            json: {
+                hits: [
+                    { path: "a.md", title: "a", heading_path: [], snippet: "", score: 0.5, score_normalized: 0, chunk_id: "1" },
+                    { path: "b.md", title: "b", heading_path: [], snippet: "", score: 0.5, score_normalized: 1, chunk_id: "2" },
+                ],
+            },
+        });
+        const { client } = makeClient({}, requestFn);
+        const res = await client.search("q");
+        expect(res.hits.map((h) => h.scoreNormalized)).toEqual([0, 1]);
     });
 });

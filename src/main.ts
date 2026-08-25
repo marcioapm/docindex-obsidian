@@ -1,6 +1,7 @@
 import log from "loglevel";
 import { Plugin, type TFile } from "obsidian";
 import { DocindexClient, RemoteSearchService } from "./adapter/docindex";
+import { registerActiveNoteStartup } from "./application/registerActiveNoteStartup";
 import { SettingsService } from "./application/SettingsService";
 import { SimilarNoteCoordinator } from "./application/SimilarNoteCoordinator";
 import {
@@ -61,6 +62,11 @@ export default class MainPlugin extends Plugin {
                 await this.similarNoteCoordinator.onFileOpen(file);
             })
         );
+
+        // file-open only fires for future switches — a note already active
+        // when the plugin loads (e.g. on Obsidian restart) would otherwise
+        // leave the sidebar/bottom view empty until the user changes files.
+        registerActiveNoteStartup(this.app.workspace, this.similarNoteCoordinator);
 
         this.registerView(
             VIEW_TYPE_SIMILAR_NOTES_SIDEBAR,

@@ -13,6 +13,8 @@ import log from "loglevel";
 import type { SettingsService } from "@/application/SettingsService";
 import type { SimilarNote } from "@/domain/model/SimilarNote";
 import type { TextSearchResult } from "@/adapter/docindex";
+import { formatSimilarityPercent } from "@/utils/displayUtils";
+import { sanitizeErrorForLog } from "@/utils/errorSanitizer";
 import { parseTrigger } from "./semanticLinkTrigger";
 import { resolveWikilink } from "@/utils/wikilinkUtils";
 
@@ -60,7 +62,7 @@ export class SemanticLinkSuggest extends EditorSuggest<SimilarNote> {
                     .findSimilarNotesFromText(context.query)
                     .then((r) => r.similarNotes)
                     .catch((err: unknown) => {
-                        log.error("[SemanticLinkSuggest] search failed", err);
+                        log.error(`[SemanticLinkSuggest] search failed: ${sanitizeErrorForLog(err)}`);
                         return [] as SimilarNote[];
                     })
                     .then(cb);
@@ -101,11 +103,14 @@ export class SemanticLinkSuggest extends EditorSuggest<SimilarNote> {
         el.addClass("suggestion-item", "mod-complex");
         const content = el.createDiv({ cls: "suggestion-content" });
         content.createDiv({ cls: "suggestion-title", text: note.title });
-        const aux = el.createDiv({ cls: "suggestion-aux" });
-        aux.createSpan({
-            cls: "suggestion-flair semantic-search-score",
-            text: `${Math.round(note.similarity * 100)}%`,
-        });
+        const percent = formatSimilarityPercent(note.similarity);
+        if (percent) {
+            const aux = el.createDiv({ cls: "suggestion-aux" });
+            aux.createSpan({
+                cls: "suggestion-flair semantic-search-score",
+                text: percent,
+            });
+        }
     }
 
     selectSuggestion(note: SimilarNote, _evt: MouseEvent | KeyboardEvent): void {

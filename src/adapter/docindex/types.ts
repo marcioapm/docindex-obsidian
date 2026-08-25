@@ -6,8 +6,17 @@
  * in `DocindexClient`.
  */
 
-/** Discriminated union matching the server's `MediaType` enum. */
-export type MediaType = "text" | "image" | "pdf";
+/** Known server media variants plus a fallback for unknown strings. */
+export type MediaType = "text" | "image" | "pdf" | "audio" | "video" | "other";
+
+/** Media types the server enum currently defines. */
+export const KNOWN_MEDIA_TYPES: ReadonlySet<string> = new Set<MediaType>([
+    "text",
+    "image",
+    "pdf",
+    "audio",
+    "video",
+]);
 
 export interface DocindexHitWire {
     path: string;
@@ -17,21 +26,19 @@ export interface DocindexHitWire {
     heading_path: string | string[] | null;
     snippet: string;
     score: number;
-    // Optional: added in server v0.3+. Old servers don't emit these; the
-    // client falls back to `score` wherever `score_normalized` is missing.
+    // Absent when the server supplies no calibrated relevance score.
     score_rrf?: number;
     score_normalized?: number;
     chunk_id: string | number;
-    // Optional media fields: absent on old servers. null and undefined both
-    // mean "not applicable" — see isHitWire for the validation contract.
-    media_type?: MediaType;
+    // Bare string allows unknown server variants to degrade to "other".
+    media_type?: string | null;
     mime_type?: string | null;
     /** 0-based start of the half-open page range [media_start, media_end). */
     media_start?: number | null;
     /** 0-based exclusive end of the page range. */
     media_end?: number | null;
     media_unit?: string | null;
-    truncated?: boolean;
+    truncated?: boolean | null;
 }
 
 export interface DocindexSearchResponseWire {
@@ -47,12 +54,14 @@ export interface DocindexHit {
     /** RRF fusion score. Equals `score` when the server supplies it. */
     scoreRrf?: number;
     /**
-     * Query-independent 0..1 display score. When the server doesn't supply
-     * it, clients should fall back to `score` (the RRF value).
+     * Calibrated 0..1 relevance score for text hits. For non-text hits this
+     * currently holds `(k+1)/(k+vector_rank)` — a vector-rank position, not
+     * a relevance measure — so it must not drive filtering or percentage
+     * display for media. Absent on servers predating v0.3.
      */
     scoreNormalized?: number;
     chunkId: string;
-    /** Defaults to "text" when absent from the wire payload (old servers). */
+    /** Defaults to "text" when absent from the wire payload. */
     mediaType: MediaType;
     mimeType?: string | null;
     /** 0-based start of the half-open page range [mediaStart, mediaEnd). Null = not paginated. */
@@ -60,7 +69,7 @@ export interface DocindexHit {
     /** 0-based exclusive end of the page range. Null = not paginated. */
     mediaEnd?: number | null;
     mediaUnit?: string | null;
-    /** Undefined when absent from wire; treat as false. */
+    /** Undefined when absent from the wire payload. */
     truncated?: boolean;
 }
 
@@ -73,12 +82,7 @@ export interface DocindexSettings {
     backendUrl: string;
     bearerToken: string;
     limit: number;
-    /**
-     * Hits with `scoreNormalized` (or `score`, as fallback) below this value
-     * are hidden from both the sidebar and the semantic-search modal. Range
-     * 0.0-1.0. 0 = show everything. 1 = only rank-1-in-both-branches hits.
-     * Typical sweet spot: 0.35-0.60.
-     */
+    /** Minimum calibrated text score in [0, 1]; 0 disables filtering. */
     relevanceThreshold: number;
 }
 
@@ -90,17 +94,14 @@ export const DEFAULT_DOCINDEX_SETTINGS: DocindexSettings = {
     relevanceThreshold: 0.4,
 };
 
-/**
- * Normalized-score accessor with graceful fallback.
- *
- * Returns `hit.scoreNormalized` when the server supplied it (v0.3+), else
- * `hit.score` (the RRF value). The fallback is lossy — RRF scores are not
- * in [0, 1] — but it keeps old servers functional during rollout. Consumers
- * that want strict fallback semantics should check `scoreNormalized`
- * directly.
- */
-export function getDisplayScore(hit: DocindexHit): number {
-    return hit.scoreNormalized ?? hit.score;
+/** Returns the calibrated score, with no RRF fallback. */
+export function getDisplayScore(hit: DocindexHit): number | undefined {
+    return hit.scoreNormalized;
+}
+
+/** Media scores are rank-derived and cannot drive thresholds or percentages. */
+export function isThresholdEligible(hit: DocindexHit): boolean {
+    return hit.scoreNormalized !== undefined && hit.mediaType === "text";
 }
 
 /**
@@ -123,7 +124,6 @@ export function formatMediaLabel(hit: Pick<DocindexHit, "mediaType" | "mediaStar
     if (mediaType === "image") {
         base = "🖼 Image";
     } else if (mediaType === "pdf") {
-        // Requires non-null finite integers, mediaStart ≥ 0, mediaEnd > mediaStart.
         if (
             mediaStart != null &&
             mediaEnd != null &&
@@ -132,8 +132,8 @@ export function formatMediaLabel(hit: Pick<DocindexHit, "mediaType" | "mediaStar
             mediaStart >= 0 &&
             mediaEnd > mediaStart
         ) {
-            const displayStart = mediaStart + 1;      // 0-based → 1-based
-            const displayEnd = mediaEnd;               // exclusive end = 1-based inclusive end
+            const displayStart = mediaStart + 1;
+            const displayEnd = mediaEnd;
             if (mediaEnd - mediaStart === 1) {
                 base = `📄 PDF page ${displayStart}`;
             } else {
@@ -142,6 +142,12 @@ export function formatMediaLabel(hit: Pick<DocindexHit, "mediaType" | "mediaStar
         } else {
             base = "📄 PDF";
         }
+    } else if (mediaType === "audio") {
+        base = "🎵 Audio";
+    } else if (mediaType === "video") {
+        base = "🎬 Video";
+    } else if (mediaType === "other") {
+        base = "📎 Media";
     } else {
         return "";
     }

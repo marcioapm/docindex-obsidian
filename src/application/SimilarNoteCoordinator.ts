@@ -7,18 +7,15 @@ import type { SimilarNote } from "@/domain/model/SimilarNote";
 import log from "loglevel";
 import type { TFile, Vault } from "obsidian";
 import { BehaviorSubject } from "rxjs";
-import type { SettingsService } from "./SettingsService";
+import type { SettingsService, SimilarNotesSettings } from "./SettingsService";
 
-/**
- * Minimal surface SimilarNoteCoordinator depends on. Structural interface so
- * any remote or local similar-note provider can be injected.
- */
 interface SimilarNoteFinderLike {
     findSimilarNotes(note: Note, limit?: number): Promise<SimilarNote[]>;
 }
 
 interface SimilarNoteCacheEntry {
     mtime: number;
+    settingsGeneration: number;
     notes: SimilarNoteEntry[];
 }
 
@@ -31,6 +28,13 @@ const MAX_CACHE_SIZE = 20;
  * representation.
  */
 export const INDEXABLE_TEXT_EXTENSIONS = new Set(["md", "txt"]);
+
+const RETRIEVAL_AFFECTING_KEYS: ReadonlySet<keyof SimilarNotesSettings> = new Set([
+    "docindex",
+    "showSourceChunk",
+    "sidebarResultCount",
+    "bottomResultCount",
+]);
 
 /**
  * Drives the sidebar view-model.
@@ -51,6 +55,8 @@ export class SimilarNoteCoordinator {
         bottomResultCount: 5,
     });
     private cache = new Map<string, SimilarNoteCacheEntry>();
+    // Identifies the settings generation used to fetch each cache entry.
+    private settingsGeneration = 0;
 
     constructor(
         private readonly vault: Vault,
@@ -67,12 +73,11 @@ export class SimilarNoteCoordinator {
 
         this.settingsService
             .getNewSettingsObservable()
-            .subscribe((newSettings) => {
-                if (
-                    newSettings.sidebarResultCount !== undefined ||
-                    newSettings.bottomResultCount !== undefined
-                ) {
-                    this.cache.clear();
+            .subscribe((changed) => {
+                if (Object.keys(changed).some((key) =>
+                    RETRIEVAL_AFFECTING_KEYS.has(key as keyof SimilarNotesSettings)
+                )) {
+                    this.settingsGeneration++;
                 }
 
                 const s = this.settingsService.get();
@@ -89,18 +94,20 @@ export class SimilarNoteCoordinator {
         return this.noteBottomViewModel$.asObservable();
     }
 
-    async onFileOpen(file: TFile | null) {
-        if (!file || !INDEXABLE_TEXT_EXTENSIONS.has(file.extension)) return;
-        this.emitNoteBottomViewModel(file);
+    onFileOpen(file: TFile | null): Promise<void> {
+        if (!file || !INDEXABLE_TEXT_EXTENSIONS.has(file.extension)) {
+            return Promise.resolve();
+        }
+        return this.emitNoteBottomViewModel(file);
     }
 
-    async emitNoteBottomViewModelFromPath(path: string) {
+    emitNoteBottomViewModelFromPath(path: string): Promise<void> {
         const file = this.vault.getFileByPath(path);
-        if (!file) return;
-        this.emitNoteBottomViewModel(file);
+        if (!file) return Promise.resolve();
+        return this.emitNoteBottomViewModel(file);
     }
 
-    async emitNoteBottomViewModel(file: TFile) {
+    async emitNoteBottomViewModel(file: TFile): Promise<void> {
         const similarNotes = await this.getSimilarNotes(file);
         const settings = this.settingsService.get();
         this.noteBottomViewModel$.next({
@@ -114,10 +121,16 @@ export class SimilarNoteCoordinator {
 
     async getSimilarNotes(file: TFile): Promise<SimilarNoteEntry[]> {
         const cacheEntry = this.cache.get(file.path);
-        if (cacheEntry && cacheEntry.mtime === file.stat.mtime) {
+        if (
+            cacheEntry &&
+            cacheEntry.mtime === file.stat.mtime &&
+            cacheEntry.settingsGeneration === this.settingsGeneration
+        ) {
             return cacheEntry.notes;
         }
 
+        // Capture before I/O so old-settings responses cannot enter the current cache.
+        const requestGeneration = this.settingsGeneration;
         const settings = this.settingsService.get();
         const content = await this.vault.cachedRead(file);
         const note = new Note(file.path, file.basename, content, []);
@@ -129,6 +142,10 @@ export class SimilarNoteCoordinator {
             note,
             maxResultCount
         );
+
+        if (requestGeneration !== this.settingsGeneration) {
+            return this.getSimilarNotes(file);
+        }
 
         const showSourceChunk = settings.showSourceChunk;
         const similarNoteEntries = similarNotes
@@ -160,6 +177,7 @@ export class SimilarNoteCoordinator {
 
         this.cache.set(file.path, {
             mtime: file.stat.mtime,
+            settingsGeneration: requestGeneration,
             notes: similarNoteEntries,
         });
         if (this.cache.size > MAX_CACHE_SIZE) {

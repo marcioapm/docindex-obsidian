@@ -42,6 +42,24 @@ describe("formatMediaLabel", () => {
     });
 });
 
+describe("formatMediaLabel — audio, video, and unrecognized media types", () => {
+    it("returns '🎵 Audio' for an audio hit", () => {
+        expect(formatMediaLabel({ mediaType: "audio", mediaStart: null, mediaEnd: null, truncated: false })).toBe("🎵 Audio");
+    });
+
+    it("returns '🎬 Video' for a video hit", () => {
+        expect(formatMediaLabel({ mediaType: "video", mediaStart: null, mediaEnd: null, truncated: false })).toBe("🎬 Video");
+    });
+
+    it("returns '📎 Media' for an unrecognized-but-structurally-valid media type", () => {
+        expect(formatMediaLabel({ mediaType: "other", mediaStart: null, mediaEnd: null, truncated: false })).toBe("📎 Media");
+    });
+
+    it("appends '(truncated)' to an audio label when truncated is true", () => {
+        expect(formatMediaLabel({ mediaType: "audio", mediaStart: null, mediaEnd: null, truncated: true })).toBe("🎵 Audio (truncated)");
+    });
+});
+
 describe("formatMediaLabel — degenerate PDF page ranges fall back to bare label", () => {
     it("zero-length range [2,2) → '📄 PDF'", () => {
         expect(formatMediaLabel({ mediaType: "pdf", mediaStart: 2, mediaEnd: 2, truncated: false })).toBe("📄 PDF");
@@ -61,6 +79,14 @@ describe("formatMediaLabel — degenerate PDF page ranges fall back to bare labe
 
     it("Infinity start → '📄 PDF'", () => {
         expect(formatMediaLabel({ mediaType: "pdf", mediaStart: Infinity, mediaEnd: Infinity, truncated: false })).toBe("📄 PDF");
+    });
+
+    it("Infinity end alone (finite start) → '📄 PDF'", () => {
+        // mediaStart=0 is finite and passes Number.isInteger; mediaEnd=Infinity is the
+        // only failing guard here. { Infinity, Infinity } alone would leave
+        // `Number.isInteger(mediaEnd)` un-exercised in isolation because
+        // `Infinity > Infinity` is already false regardless of that guard.
+        expect(formatMediaLabel({ mediaType: "pdf", mediaStart: 0, mediaEnd: Infinity, truncated: false })).toBe("📄 PDF");
     });
 
     it("float start 1.5 → '📄 PDF'", () => {

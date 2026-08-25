@@ -53,3 +53,9 @@ export function abbreviatePath(path: string, maxLength?: number): string {
 
     return `${path.slice(0, startLength)}...${path.slice(-endLength)}`;
 }
+
+/** Formats a calibrated score, or returns `null` when none is available. */
+export function formatSimilarityPercent(similarity: number | undefined): string | null {
+    if (similarity === undefined) return null;
+    return `${Math.round(similarity * 100)}%`;
+}

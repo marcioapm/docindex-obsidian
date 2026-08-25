@@ -1,8 +1,21 @@
-import { describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import { RemoteSearchService } from "../RemoteSearchService";
-import type { DocindexClient } from "../DocindexClient";
-import type { DocindexHit, DocindexSearchResponse } from "../types";
+import { DocindexError, type DocindexClient } from "../DocindexClient";
+import { getDisplayScore, type DocindexHit, type DocindexSearchResponse } from "../types";
 import { Note } from "@/domain/model/Note";
+
+const noticeMessages: string[] = [];
+vi.mock("obsidian", async () => {
+    const actual = await vi.importActual<Record<string, unknown>>("obsidian");
+    return {
+        ...actual,
+        Notice: class {
+            constructor(msg: string) {
+                noticeMessages.push(msg);
+            }
+        },
+    };
+});
 
 function hit(overrides: Partial<DocindexHit> = {}): DocindexHit {
     return {
@@ -25,19 +38,34 @@ function mockClient(response: DocindexSearchResponse): DocindexClient {
     } as unknown as DocindexClient;
 }
 
+function mockRejectingClient(err: unknown): DocindexClient {
+    return {
+        search: vi.fn().mockRejectedValue(err),
+        similar: vi.fn().mockRejectedValue(err),
+    } as unknown as DocindexClient;
+}
+
+beforeEach(() => {
+    noticeMessages.length = 0;
+});
+
 describe("RemoteSearchService", () => {
+    it("does not use raw score when score_normalized is missing", () => {
+        expect(getDisplayScore(hit({ score: 0.42, scoreNormalized: undefined }))).toBeUndefined();
+    });
+
     it("maps score_normalized into SimilarNote.similarity", async () => {
         const svc = new RemoteSearchService(mockClient({ hits: [hit()] }));
         const res = await svc.findSimilarNotesFromText("query");
         expect(res.similarNotes[0].similarity).toBe(0.87);
     });
 
-    it("falls back to raw score when score_normalized is missing", async () => {
+    it("leaves similarity undefined when score_normalized is missing (legacy server)", async () => {
         const svc = new RemoteSearchService(
             mockClient({ hits: [hit({ scoreNormalized: undefined, score: 0.42 })] })
         );
         const res = await svc.findSimilarNotesFromText("query");
-        expect(res.similarNotes[0].similarity).toBe(0.42);
+        expect(res.similarNotes[0].similarity).toBeUndefined();
     });
 
     it("findSimilarNotes also carries score_normalized forward", async () => {
@@ -70,5 +98,65 @@ describe("RemoteSearchService", () => {
         expect(result.mediaStart).toBe(2);
         expect(result.mediaEnd).toBe(5);
         expect(result.truncated).toBe(true);
+    });
+
+    it("leaves similarity undefined for an image hit even when score_normalized is present", async () => {
+        const svc = new RemoteSearchService(
+            mockClient({
+                hits: [hit({ path: "photo.png", mediaType: "image", scoreNormalized: 1.0 })],
+            })
+        );
+        const note = new Note("source.md", "source", "content", []);
+        const [result] = await svc.findSimilarNotes(note);
+        expect(result.similarity).toBeUndefined();
+    });
+
+    it("leaves similarity undefined for a PDF hit even when score_normalized is present", async () => {
+        const svc = new RemoteSearchService(
+            mockClient({
+                hits: [hit({ path: "doc.pdf", mediaType: "pdf", scoreNormalized: 1.0 })],
+            })
+        );
+        const note = new Note("source.md", "source", "content", []);
+        const [result] = await svc.findSimilarNotes(note);
+        expect(result.similarity).toBeUndefined();
+    });
+});
+
+describe("RemoteSearchService — error handling", () => {
+    it("surfaces a Notice for a not-configured DocindexError and returns empty results", async () => {
+        const svc = new RemoteSearchService(
+            mockRejectingClient(new DocindexError("not-configured", "docindex is disabled"))
+        );
+        const res = await svc.findSimilarNotesFromText("query");
+        expect(res.similarNotes).toEqual([]);
+        expect(noticeMessages.some((m) => m.includes("disabled or not configured"))).toBe(true);
+    });
+
+    it("does not duplicate a Notice for a network/server/auth/malformed DocindexError (already surfaced by DocindexClient)", async () => {
+        for (const kind of ["network", "server", "unauthorized", "malformed"] as const) {
+            noticeMessages.length = 0;
+            const svc = new RemoteSearchService(
+                mockRejectingClient(new DocindexError(kind, `${kind} failure`))
+            );
+            const res = await svc.findSimilarNotesFromText("query");
+            expect(res.similarNotes).toEqual([]);
+            expect(noticeMessages).toEqual([]);
+        }
+    });
+
+    it("rethrows a non-DocindexError instead of swallowing it as an empty result", async () => {
+        const svc = new RemoteSearchService(mockRejectingClient(new TypeError("bug in grouping")));
+        await expect(svc.findSimilarNotesFromText("query")).rejects.toThrow("bug in grouping");
+    });
+
+    it("findSimilarNotes surfaces a not-configured Notice and returns []", async () => {
+        const svc = new RemoteSearchService(
+            mockRejectingClient(new DocindexError("not-configured", "docindex is disabled"))
+        );
+        const note = new Note("source.md", "source", "content", []);
+        const result = await svc.findSimilarNotes(note);
+        expect(result).toEqual([]);
+        expect(noticeMessages.some((m) => m.includes("disabled or not configured"))).toBe(true);
     });
 });
