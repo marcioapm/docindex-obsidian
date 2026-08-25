@@ -169,7 +169,8 @@ function toDomainHit(wire: DocindexHitWire): DocindexHit {
         mediaStart: wire.media_start,
         mediaEnd: wire.media_end,
         mediaUnit: wire.media_unit,
-        truncated: wire.truncated,
+        // Normalize null to undefined: DocindexHit.truncated is boolean | undefined.
+        truncated: wire.truncated ?? undefined,
     };
 }
 
@@ -199,10 +200,15 @@ function isHitWire(v: unknown): v is DocindexHitWire {
     if (typeof v.path !== "string") return false;
     if (typeof v.title !== "string") return false;
     if (typeof v.snippet !== "string") return false;
-    if (typeof v.score !== "number") return false;
+    if (typeof v.score !== "number" || !Number.isFinite(v.score)) return false;
     if (typeof v.chunk_id !== "string" && typeof v.chunk_id !== "number") return false;
-    if (v.score_rrf !== undefined && typeof v.score_rrf !== "number") return false;
-    if (v.score_normalized !== undefined && typeof v.score_normalized !== "number") return false;
+    if (v.score_rrf !== undefined && (typeof v.score_rrf !== "number" || !Number.isFinite(v.score_rrf))) {
+        return false;
+    }
+    if (v.score_normalized !== undefined) {
+        if (typeof v.score_normalized !== "number" || !Number.isFinite(v.score_normalized)) return false;
+        if (v.score_normalized < 0 || v.score_normalized > 1) return false;
+    }
     if (v.heading_path !== null && v.heading_path !== undefined) {
         if (Array.isArray(v.heading_path)) {
             if (!v.heading_path.every((x) => typeof x === "string")) return false;
@@ -213,7 +219,9 @@ function isHitWire(v: unknown): v is DocindexHitWire {
     // Media fields: all optional. null and undefined both mean "not applicable"
     // (`!= null` catches both). A present non-null value with the wrong type fails
     // immediately so server regressions surface before they corrupt domain state.
-    if (v.media_type != null && !VALID_MEDIA_TYPES.has(v.media_type as string)) return false;
+    if (v.media_type != null) {
+        if (typeof v.media_type !== "string" || !VALID_MEDIA_TYPES.has(v.media_type)) return false;
+    }
     if (v.mime_type !== undefined && v.mime_type !== null && typeof v.mime_type !== "string") return false;
     if (v.media_start !== undefined && v.media_start !== null && typeof v.media_start !== "number") return false;
     if (v.media_end !== undefined && v.media_end !== null && typeof v.media_end !== "number") return false;

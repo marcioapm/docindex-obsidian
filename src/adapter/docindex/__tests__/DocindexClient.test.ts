@@ -296,3 +296,54 @@ describe("DocindexClient — URL handling and relevance threshold", () => {
         expect(res.hits.map((h) => h.path)).toEqual(["a.md"]);
     });
 });
+
+describe("DocindexClient — score validation", () => {
+    it.each([
+        ["NaN", NaN],
+        ["Infinity", Infinity],
+        ["-Infinity", -Infinity],
+    ])("rejects a hit whose score is %s", async (_label, score) => {
+        const requestFn = vi.fn().mockResolvedValue({
+            status: 200,
+            headers: {},
+            json: { hits: [{ path: "a.md", title: "a", heading_path: [], snippet: "", score, chunk_id: "1" }] },
+        });
+        const { client } = makeClient({}, requestFn);
+        await expect(client.search("q")).rejects.toMatchObject({ kind: "malformed" });
+    });
+
+    it.each([
+        ["below 0", -0.1],
+        ["above 1", 1.1],
+        ["NaN", NaN],
+        ["Infinity", Infinity],
+    ])("rejects a hit whose score_normalized is %s", async (_label, score_normalized) => {
+        const requestFn = vi.fn().mockResolvedValue({
+            status: 200,
+            headers: {},
+            json: {
+                hits: [
+                    { path: "a.md", title: "a", heading_path: [], snippet: "", score: 0.5, score_normalized, chunk_id: "1" },
+                ],
+            },
+        });
+        const { client } = makeClient({}, requestFn);
+        await expect(client.search("q")).rejects.toMatchObject({ kind: "malformed" });
+    });
+
+    it("accepts score_normalized at the boundaries 0 and 1", async () => {
+        const requestFn = vi.fn().mockResolvedValue({
+            status: 200,
+            headers: {},
+            json: {
+                hits: [
+                    { path: "a.md", title: "a", heading_path: [], snippet: "", score: 0.5, score_normalized: 0, chunk_id: "1" },
+                    { path: "b.md", title: "b", heading_path: [], snippet: "", score: 0.5, score_normalized: 1, chunk_id: "2" },
+                ],
+            },
+        });
+        const { client } = makeClient({}, requestFn);
+        const res = await client.search("q");
+        expect(res.hits.map((h) => h.scoreNormalized)).toEqual([0, 1]);
+    });
+});

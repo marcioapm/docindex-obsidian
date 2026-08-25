@@ -24,14 +24,14 @@ export interface DocindexHitWire {
     chunk_id: string | number;
     // Optional media fields: absent on old servers. null and undefined both
     // mean "not applicable" — see isHitWire for the validation contract.
-    media_type?: MediaType;
+    media_type?: MediaType | null;
     mime_type?: string | null;
     /** 0-based start of the half-open page range [media_start, media_end). */
     media_start?: number | null;
     /** 0-based exclusive end of the page range. */
     media_end?: number | null;
     media_unit?: string | null;
-    truncated?: boolean;
+    truncated?: boolean | null;
 }
 
 export interface DocindexSearchResponseWire {
