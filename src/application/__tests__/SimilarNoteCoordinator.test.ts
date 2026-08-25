@@ -58,6 +58,48 @@ describe("SimilarNoteCoordinator — INDEXABLE_TEXT_EXTENSIONS", () => {
     });
 });
 
+describe("SimilarNoteCoordinator — getSimilarNotes media field mapping", () => {
+    it("maps all four media fields from SimilarNote onto SimilarNoteEntry", async () => {
+        // Mutation: deleting any of the four media-field assignments in
+        // getSimilarNotes (SimilarNoteCoordinator.ts lines 144–147) leaves that
+        // property undefined on the entry, failing the corresponding assertion below.
+        // An image hit with truncated=true ensures every value is non-default and
+        // distinguishable from the SimilarNoteEntry interface defaults.
+        const { SimilarNote } = await import("@/domain/model/SimilarNote");
+        const imageNote = new SimilarNote(
+            "Photo",           // title
+            "assets/photo.png",// path
+            0.8,               // similarity
+            "snippet",         // similarChunk
+            "source",          // sourceChunk
+            [],                // additionalChunks
+            [],                // headingPath
+            "img:0",           // chunkId
+            "image",           // mediaType
+            null,              // mediaStart
+            null,              // mediaEnd
+            true               // truncated
+        );
+
+        const photoFile = makeTFile("assets/photo.png", "png");
+        const vault = makeVault(new Map([["assets/photo.png", photoFile]]));
+        const finder = makeFinder([imageNote]);
+
+        const coordinator = new SimilarNoteCoordinator(
+            vault as Vault,
+            finder,
+            makeSettingsService() as ReturnType<typeof makeSettingsService>
+        );
+
+        const entries = await coordinator.getSimilarNotes(photoFile);
+        expect(entries).toHaveLength(1);
+        expect(entries[0].mediaType).toBe("image");
+        expect(entries[0].mediaStart).toBeNull();
+        expect(entries[0].mediaEnd).toBeNull();
+        expect(entries[0].truncated).toBe(true);
+    });
+});
+
 describe("SimilarNoteCoordinator — onFileOpen extension filter", () => {
     it("triggers getSimilarNotes for a .md file", async () => {
         // Mutation: changing INDEXABLE_TEXT_EXTENSIONS.has() to === "md" would still
