@@ -36,11 +36,37 @@ describe("SettingsService — load() with no persisted data", () => {
 });
 
 describe("SettingsService — load() rejects invalid persisted values", () => {
-    it("falls back to defaults when loadData() resolves to a non-object", async () => {
-        const { plugin } = makePlugin("not an object");
+    it("falls back to the complete default settings object when loadData() resolves to a non-record (array with enumerable properties matching setting keys)", async () => {
+        // A validator that only checks nested field types but not the shape of
+        // `data` itself (e.g. a spread-based loader) would merge these
+        // enumerable properties directly onto DEFAULT_SETTINGS since arrays
+        // spread their own properties like any object. isRecord's
+        // `!Array.isArray` check must reject this before any field is read.
+        const corrupt = Object.assign([], {
+            sidebarResultCount: 999,
+            bottomResultCount: 999,
+            noteDisplayMode: "path",
+            showSourceChunk: true,
+            semanticLinkTrigger: "!!",
+            docindex: { limit: 999 },
+        });
+        const { plugin } = makePlugin(corrupt);
         const service = new SettingsService(plugin);
         await service.load();
-        expect(service.get().sidebarResultCount).toBe(10);
+        expect(service.get()).toEqual({
+            noteDisplayMode: "smart",
+            showSourceChunk: false,
+            sidebarResultCount: 10,
+            bottomResultCount: 5,
+            docindex: {
+                enabled: false,
+                backendUrl: "",
+                bearerToken: "",
+                limit: 10,
+                relevanceThreshold: 0.4,
+            },
+            semanticLinkTrigger: ";;",
+        });
     });
 
     it("rejects a string sidebarResultCount instead of letting it reach Math.max/slice", async () => {
@@ -94,12 +120,59 @@ describe("SettingsService — load() rejects invalid persisted values", () => {
         expect(service.get().semanticLinkTrigger).toBe(";;");
     });
 
-    it("rejects a null docindex block entirely, falling back to defaults", async () => {
+    it("rejects a null docindex block entirely, falling back to the complete default docindex object", async () => {
         const { plugin } = makePlugin({ docindex: null });
         const service = new SettingsService(plugin);
         await service.load();
-        expect(service.get().docindex.limit).toBe(10);
-        expect(service.get().docindex.relevanceThreshold).toBe(0.4);
+        expect(service.get().docindex).toEqual({
+            enabled: false,
+            backendUrl: "",
+            bearerToken: "",
+            limit: 10,
+            relevanceThreshold: 0.4,
+        });
+    });
+
+    it("strips unknown keys from an otherwise-valid docindex block instead of persisting them", async () => {
+        // A spread-based loader (`{ ...DEFAULT_DOCINDEX_SETTINGS, ...data.docindex }`)
+        // would carry an unrecognized key straight through; the allowlisted
+        // object built field-by-field cannot.
+        const { plugin } = makePlugin({
+            docindex: { limit: 20, legacyApiKey: "sk-old-secret" },
+        });
+        const service = new SettingsService(plugin);
+        await service.load();
+        expect(service.get().docindex).toEqual({
+            enabled: false,
+            backendUrl: "",
+            bearerToken: "",
+            limit: 20,
+            relevanceThreshold: 0.4,
+        });
+    });
+
+    it("rejects an array-shaped docindex block whose own enumerable properties resemble valid fields", async () => {
+        // Array.isArray(data.docindex) must be excluded by isRecord before any
+        // field is read — a spread-based loader would merge these enumerable
+        // array properties (assigned like object fields) directly onto
+        // DEFAULT_DOCINDEX_SETTINGS.
+        const corruptDocindex = Object.assign([], {
+            enabled: true,
+            backendUrl: "http://evil",
+            bearerToken: "stolen",
+            limit: 999,
+            relevanceThreshold: 999,
+        });
+        const { plugin } = makePlugin({ docindex: corruptDocindex });
+        const service = new SettingsService(plugin);
+        await service.load();
+        expect(service.get().docindex).toEqual({
+            enabled: false,
+            backendUrl: "",
+            bearerToken: "",
+            limit: 10,
+            relevanceThreshold: 0.4,
+        });
     });
 
     it("rejects individual invalid docindex fields while keeping valid ones", async () => {

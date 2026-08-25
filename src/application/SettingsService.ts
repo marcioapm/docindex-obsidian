@@ -78,10 +78,9 @@ function validateDocindex(v: unknown): DocindexSettings {
  * Validates `plugin.loadData()` output, which is untrusted: it can be
  * hand-edited, left over from an older schema, or simply malformed. Every
  * field falls back to its default rather than propagating an invalid type,
- * a string where a count is expected, or an out-of-range number. Fields
- * from pre-remote-only versions (model provider, OpenAI/Gemini API keys,
- * GPU/indexing/exclusion settings) are not read here and are dropped the
- * next time settings are saved.
+ * a string where a count is expected, or an out-of-range number. Only the
+ * fields declared on `SimilarNotesSettings` are read; any other key present
+ * in `data` is dropped and not re-persisted on the next save.
  */
 function validateSettings(data: unknown): SimilarNotesSettings {
     if (!isRecord(data)) return { ...DEFAULT_SETTINGS };
