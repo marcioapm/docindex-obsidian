@@ -95,6 +95,10 @@ describe("DocindexClient — toDomainHit media field mapping", () => {
     it("maps a truncated image hit", async () => {
         // Mutation: removing `truncated: wire.truncated` in toDomainHit would leave
         // truncated undefined, failing the toBe(true) assertion.
+        // Mutation for mimeType: removing `mimeType: wire.mime_type` leaves mimeType
+        // undefined, failing toBe('image/gif').
+        // Mutation for mediaUnit: removing `mediaUnit: wire.media_unit` leaves mediaUnit
+        // undefined, failing toBeNull() (undefined !== null).
         const requestFn = vi.fn().mockResolvedValue({
             status: 200,
             headers: {},
@@ -124,6 +128,8 @@ describe("DocindexClient — toDomainHit media field mapping", () => {
         expect(h.truncated).toBe(true);
         expect(h.mediaStart).toBeNull();
         expect(h.mediaEnd).toBeNull();
+        expect(h.mimeType).toBe("image/gif");
+        expect(h.mediaUnit).toBeNull();
     });
 });
 

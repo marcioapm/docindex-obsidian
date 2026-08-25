@@ -50,6 +50,18 @@ describe("formatMediaLabel", () => {
         // Mutation: add truncated handling for text hits that returns a non-empty string.
         expect(formatMediaLabel({ mediaType: "text", mediaStart: null, mediaEnd: null, truncated: true })).toBe("");
     });
+
+    it("undefined truncated is treated as false (not-truncated path)", () => {
+        // truncated is typed as `boolean | undefined` in DocindexHit. The
+        // implementation relies on JS truthiness — undefined is falsy — so the
+        // non-truncated label is returned rather than an error or the truncated
+        // suffix.
+        //
+        // Mutation: adding `if (truncated === undefined) throw ...` or
+        // `if (truncated === undefined) return \`${base} (truncated)\`` would
+        // break this assertion.
+        expect(formatMediaLabel({ mediaType: "image", mediaStart: null, mediaEnd: null, truncated: undefined })).toBe("🖼 Image");
+    });
 });
 
 describe("formatMediaLabel — degenerate PDF page ranges fall back to bare label", () => {
