@@ -33,22 +33,11 @@ export class SimilarNote {
         public readonly chunkId: string = "",
         /** Content category of the top-scoring chunk. Defaults to "text". */
         public readonly mediaType: MediaType = "text",
-        /**
-         * 0-based start page of the embedded range (PDFs). Null when the
-         * media is not paginated or when the server didn't supply it.
-         */
+        /** 0-based start of the half-open page range [mediaStart, mediaEnd). Null = not paginated. */
         public readonly mediaStart: number | null = null,
-        /**
-         * 0-based exclusive end page of the embedded range (PDFs). Null
-         * when the media is not paginated or when the server didn't supply
-         * it. Display as 1-based inclusive: [mediaStart+1, mediaEnd].
-         */
+        /** 0-based exclusive end of the page range. Null = not paginated. */
         public readonly mediaEnd: number | null = null,
-        /**
-         * True when the embedding covers only part of the source (e.g.
-         * first frame of animated GIF, oversized input). Undefined when
-         * the server didn't supply it; treat as false.
-         */
+        /** Partial embedding indicator. Absent from old servers; treat as false. */
         public readonly truncated: boolean = false
     ) {}
 }

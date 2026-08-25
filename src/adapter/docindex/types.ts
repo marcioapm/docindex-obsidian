@@ -22,26 +22,15 @@ export interface DocindexHitWire {
     score_rrf?: number;
     score_normalized?: number;
     chunk_id: string | number;
-    // Optional: added when the server indexes non-Markdown sources.
-    // Absent on old servers — all fields below must be treated as optional.
-    /** Content category. Absent on old servers; defaults to "text". */
+    // Optional media fields: absent on old servers. null and undefined both
+    // mean "not applicable" — see isHitWire for the validation contract.
     media_type?: MediaType;
-    /** MIME type string (e.g. "image/jpeg"), nullable. */
     mime_type?: string | null;
-    /**
-     * 0-based start of the page range (PDFs). Half-open with `media_end`.
-     * Null for non-paginated media.
-     */
+    /** 0-based start of the half-open page range [media_start, media_end). */
     media_start?: number | null;
-    /**
-     * 0-based exclusive end of the page range (PDFs). Null for
-     * non-paginated media.
-     */
+    /** 0-based exclusive end of the page range. */
     media_end?: number | null;
-    /** Unit label for the range (e.g. "page"). Null when not applicable. */
     media_unit?: string | null;
-    /** True when the embedding covers only part of the source (e.g. first
-     *  frame of an animated GIF, or an oversized input that was truncated). */
     truncated?: boolean;
 }
 
@@ -63,29 +52,15 @@ export interface DocindexHit {
      */
     scoreNormalized?: number;
     chunkId: string;
-    /**
-     * Content category. Defaults to "text" when absent from the wire
-     * payload (old servers pre-dating media indexing).
-     */
+    /** Defaults to "text" when absent from the wire payload (old servers). */
     mediaType: MediaType;
-    /** MIME type string, or undefined when the server didn't supply it. */
     mimeType?: string | null;
-    /**
-     * 0-based start page (PDFs). Undefined when the server didn't supply it
-     * or when the media is not paginated.
-     */
+    /** 0-based start of the half-open page range [mediaStart, mediaEnd). Null = not paginated. */
     mediaStart?: number | null;
-    /**
-     * 0-based exclusive end page (PDFs). Undefined when the server didn't
-     * supply it or when the media is not paginated.
-     */
+    /** 0-based exclusive end of the page range. Null = not paginated. */
     mediaEnd?: number | null;
-    /** Unit label for the range, or undefined when not applicable. */
     mediaUnit?: string | null;
-    /**
-     * True when the embedding covers only part of the source. Undefined
-     * when the server didn't supply it (treat as false).
-     */
+    /** Undefined when absent from wire; treat as false. */
     truncated?: boolean;
 }
 
@@ -129,29 +104,17 @@ export function getDisplayScore(hit: DocindexHit): number {
 }
 
 /**
- * Formats a human-readable media type label for a hit.
+ * Returns a human-readable label for the media type of a hit, or `""` for
+ * text hits (so callers can use `label && <span>{label}</span>` without a
+ * branch).
  *
- * Returns an empty string for text hits so callers can render it
- * conditionally without a branch: `label && <span>{label}</span>`.
+ * PDF page numbers use the 0-based half-open range [mediaStart, mediaEnd)
+ * converted to 1-based inclusive display. Degenerate ranges (zero-length,
+ * inverted, negative, NaN, Infinity, float) fall back to the bare "📄 PDF"
+ * label. `truncated` appends " (truncated)".
  *
- * PDF page numbers are derived from the 0-based half-open range
- * [mediaStart, mediaEnd): displayed as 1-based inclusive [start+1, end].
- * The range is used only when both bounds are non-null finite integers,
- * mediaStart ≥ 0, and mediaEnd > mediaStart. Any other combination
- * (zero-length, inverted, negative, NaN, Infinity, float) falls back to
- * the bare "📄 PDF" label so a malformed server can never produce an
- * inverted or meaningless page string. A truncated flag appends
- * "(truncated)" to signal partial embedding.
- *
- * Examples:
- *   image, not truncated  → "🖼 Image"
- *   image, truncated      → "🖼 Image (truncated)"
- *   pdf, page 0..1        → "📄 PDF page 1"
- *   pdf, pages 1..3       → "📄 PDF pages 2–3"
- *   pdf, no range         → "📄 PDF"
- *   pdf, zero-length [2,2) → "📄 PDF"
- *   pdf, inverted [5,2)   → "📄 PDF"
- *   text                  → ""
+ * Examples: `{ mediaType:"pdf", mediaStart:0, mediaEnd:1 }` → "📄 PDF page 1"
+ *           `{ mediaType:"image", truncated:true }` → "🖼 Image (truncated)"
  */
 export function formatMediaLabel(hit: Pick<DocindexHit, "mediaType" | "mediaStart" | "mediaEnd" | "truncated">): string {
     const { mediaType, mediaStart, mediaEnd, truncated } = hit;
@@ -160,9 +123,7 @@ export function formatMediaLabel(hit: Pick<DocindexHit, "mediaType" | "mediaStar
     if (mediaType === "image") {
         base = "🖼 Image";
     } else if (mediaType === "pdf") {
-        // Valid range: both values must be non-null finite integers, start ≥ 0,
-        // and end strictly greater than start. Any other combination (zero-length,
-        // inverted, negative, NaN, Infinity, float) falls back to the bare label.
+        // Requires non-null finite integers, mediaStart ≥ 0, mediaEnd > mediaStart.
         if (
             mediaStart != null &&
             mediaEnd != null &&
@@ -172,9 +133,8 @@ export function formatMediaLabel(hit: Pick<DocindexHit, "mediaType" | "mediaStar
             mediaEnd > mediaStart
         ) {
             const displayStart = mediaStart + 1;      // 0-based → 1-based
-            const displayEnd = mediaEnd;               // exclusive end equals 1-based inclusive end
+            const displayEnd = mediaEnd;               // exclusive end = 1-based inclusive end
             if (mediaEnd - mediaStart === 1) {
-                // Half-open range covers exactly one page.
                 base = `📄 PDF page ${displayStart}`;
             } else {
                 base = `📄 PDF pages ${displayStart}–${displayEnd}`;
@@ -183,7 +143,6 @@ export function formatMediaLabel(hit: Pick<DocindexHit, "mediaType" | "mediaStar
             base = "📄 PDF";
         }
     } else {
-        // text: no indicator — renders exactly as before
         return "";
     }
 

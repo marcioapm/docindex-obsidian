@@ -163,8 +163,7 @@ function toDomainHit(wire: DocindexHitWire): DocindexHit {
         scoreRrf: wire.score_rrf,
         scoreNormalized: wire.score_normalized,
         chunkId: String(wire.chunk_id),
-        // Default to "text" so downstream code never branches on undefined.
-        // Old servers pre-dating media indexing don't emit media_type.
+        // Default to "text" — old servers pre-dating media indexing don't emit media_type.
         mediaType: wire.media_type ?? "text",
         mimeType: wire.mime_type,
         mediaStart: wire.media_start,
@@ -211,10 +210,9 @@ function isHitWire(v: unknown): v is DocindexHitWire {
             return false;
         }
     }
-    // Media fields: all optional. A missing field (undefined) or an explicit
-    // null passes — both signal "not applicable". A present non-null value
-    // with the wrong type fails so server-side regressions surface immediately.
-    // Using loose `!= null` catches both `undefined` and `null` as absent.
+    // Media fields: all optional. null and undefined both mean "not applicable"
+    // (`!= null` catches both). A present non-null value with the wrong type fails
+    // immediately so server regressions surface before they corrupt domain state.
     if (v.media_type != null && !VALID_MEDIA_TYPES.has(v.media_type as string)) return false;
     if (v.mime_type !== undefined && v.mime_type !== null && typeof v.mime_type !== "string") return false;
     if (v.media_start !== undefined && v.media_start !== null && typeof v.media_start !== "number") return false;

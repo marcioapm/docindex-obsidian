@@ -191,6 +191,13 @@ const SearchResult = ({
         e.dataTransfer.effectAllowed = "all";
     };
 
+    const mediaLabel = formatMediaLabel({
+        mediaType: note.mediaType ?? "text",
+        mediaStart: note.mediaStart ?? null,
+        mediaEnd: note.mediaEnd ?? null,
+        truncated: note.truncated ?? false,
+    });
+
     return (
         <div
             className={
@@ -241,17 +248,9 @@ const SearchResult = ({
                     )}
                 </div>
                 <div className="tree-item-flair-outer">
-                    {(() => {
-                        const label = formatMediaLabel({
-                            mediaType: note.mediaType ?? "text",
-                            mediaStart: note.mediaStart ?? null,
-                            mediaEnd: note.mediaEnd ?? null,
-                            truncated: note.truncated ?? false,
-                        });
-                        return label ? (
-                            <div className="tree-item-flair docindex-media-type">{label}</div>
-                        ) : null;
-                    })()}
+                    {mediaLabel && (
+                        <div className="tree-item-flair docindex-media-type">{mediaLabel}</div>
+                    )}
                     <div className="tree-item-flair">
                         {`${Math.round(note.similarity * 100)}%`}
                     </div>
