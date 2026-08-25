@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import log from "loglevel";
 import { SimilarNote } from "@/domain/model/SimilarNote";
 import type { TextSearchResult } from "@/adapter/docindex";
 
@@ -156,6 +157,26 @@ describe("SemanticLinkSuggest — getSuggestions", () => {
         const { suggest } = makeSuggest(";;", new Error("network down"));
         const context = { query: "some query", file: null, editor: null, start: null, end: null };
         await expect(suggest.getSuggestions(context as never)).resolves.toEqual([]);
+    });
+
+    it("does not pass a token embedded in a rejected search error to any loglevel call", async () => {
+        const errorSpy = vi.spyOn(log, "error");
+        const secret = "suggest-secret-token";
+        const { suggest } = makeSuggest(
+            ";;",
+            new Error(`request failed: Authorization: Bearer ${secret}`)
+        );
+        const context = { query: "some query", file: null, editor: null, start: null, end: null };
+
+        await suggest.getSuggestions(context as never);
+
+        for (const call of errorSpy.mock.calls) {
+            for (const arg of call) {
+                const serialized = typeof arg === "string" ? arg : JSON.stringify(arg);
+                expect(serialized).not.toContain(secret);
+            }
+        }
+        errorSpy.mockRestore();
     });
 });
 

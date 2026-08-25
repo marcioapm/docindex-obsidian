@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import log from "loglevel";
 import { DocindexClient } from "../DocindexClient";
 import type { DocindexSettings } from "../types";
 
@@ -207,6 +208,41 @@ describe("DocindexClient — server errors", () => {
         const { client } = makeClient({}, requestFn);
         await expect(client.search("q")).rejects.toMatchObject({ kind: "network" });
         expect(noticeMessages).toContain("docindex: backend unreachable (Tailscale?)");
+    });
+});
+
+describe("DocindexClient — token redaction on network-error logging", () => {
+    it("does not pass the bearer token to any loglevel call when the transport error's message contains it", async () => {
+        const debugSpy = vi.spyOn(log, "debug");
+        const errorSpy = vi.spyOn(log, "error");
+        const warnSpy = vi.spyOn(log, "warn");
+        const infoSpy = vi.spyOn(log, "info");
+
+        const secret = "super-secret-bearer-token";
+        // Simulate an HTTP client wrapper that embeds the outgoing request
+        // (including the Authorization header) in its rejection message.
+        const requestFn = vi
+            .fn()
+            .mockRejectedValue(new Error(`connect failed for request with Authorization: Bearer ${secret}`));
+        const { client } = makeClient({ bearerToken: secret }, requestFn);
+
+        await expect(client.search("q")).rejects.toMatchObject({ kind: "network" });
+
+        for (const spy of [debugSpy, errorSpy, warnSpy, infoSpy]) {
+            for (const call of spy.mock.calls) {
+                for (const arg of call) {
+                    const serialized = typeof arg === "string" ? arg : JSON.stringify(arg);
+                    expect(serialized).not.toContain(secret);
+                }
+            }
+        }
+        // Also assert against the Notice text captured by the mock above.
+        expect(noticeMessages.join(" ")).not.toContain(secret);
+
+        debugSpy.mockRestore();
+        errorSpy.mockRestore();
+        warnSpy.mockRestore();
+        infoSpy.mockRestore();
     });
 });
 

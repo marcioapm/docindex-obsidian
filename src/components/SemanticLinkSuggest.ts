@@ -14,6 +14,7 @@ import type { SettingsService } from "@/application/SettingsService";
 import type { SimilarNote } from "@/domain/model/SimilarNote";
 import type { TextSearchResult } from "@/adapter/docindex";
 import { formatSimilarityPercent } from "@/utils/displayUtils";
+import { sanitizeErrorForLog } from "@/utils/errorSanitizer";
 import { parseTrigger } from "./semanticLinkTrigger";
 import { resolveWikilink } from "@/utils/wikilinkUtils";
 
@@ -61,7 +62,7 @@ export class SemanticLinkSuggest extends EditorSuggest<SimilarNote> {
                     .findSimilarNotesFromText(context.query)
                     .then((r) => r.similarNotes)
                     .catch((err: unknown) => {
-                        log.error("[SemanticLinkSuggest] search failed", err);
+                        log.error(`[SemanticLinkSuggest] search failed: ${sanitizeErrorForLog(err)}`);
                         return [] as SimilarNote[];
                     })
                     .then(cb);

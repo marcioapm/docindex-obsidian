@@ -10,6 +10,7 @@ import "@testing-library/jest-dom/vitest";
 import { render, renderHook, screen, waitFor } from "@testing-library/react";
 import { act } from "react";
 import { beforeEach, afterEach, describe, expect, it, vi } from "vitest";
+import log from "loglevel";
 import { SearchResultItem, useSemanticSearch } from "../SemanticSearchModal";
 import { SimilarNote } from "@/domain/model/SimilarNote";
 import type { TFile } from "obsidian";
@@ -235,5 +236,38 @@ describe("useSemanticSearch — out-of-order request guard", () => {
             await Promise.resolve();
         });
         expect(result.current.results).toEqual([]);
+    });
+});
+
+describe("useSemanticSearch — token redaction on search-failure logging", () => {
+    beforeEach(() => {
+        vi.useFakeTimers();
+    });
+
+    afterEach(() => {
+        vi.useRealTimers();
+    });
+
+    it("does not pass a token embedded in a rejected search error to any loglevel call", async () => {
+        const errorSpy = vi.spyOn(log, "error");
+        const secret = "modal-secret-token";
+        const findSimilarNotesFromText = vi
+            .fn()
+            .mockRejectedValue(new Error(`request failed: Authorization: Bearer ${secret}`));
+        const service = { findSimilarNotesFromText };
+
+        const { result } = renderHook(() => useSemanticSearch(service));
+        act(() => result.current.setQuery("search query"));
+        await act(async () => {
+            await vi.advanceTimersByTimeAsync(300);
+        });
+
+        for (const call of errorSpy.mock.calls) {
+            for (const arg of call) {
+                const serialized = typeof arg === "string" ? arg : JSON.stringify(arg);
+                expect(serialized).not.toContain(secret);
+            }
+        }
+        errorSpy.mockRestore();
     });
 });

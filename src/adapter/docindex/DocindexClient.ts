@@ -1,5 +1,6 @@
 import { Notice, requestUrl, type RequestUrlParam, type RequestUrlResponse } from "obsidian";
 import log from "loglevel";
+import { sanitizeErrorForLog } from "@/utils/errorSanitizer";
 import {
     getDisplayScore,
     isThresholdEligible,
@@ -101,8 +102,7 @@ export class DocindexClient {
                 throw: false,
             });
         } catch (err) {
-            const detail = err instanceof Error ? err.message : String(err);
-            log.debug(`[docindex] network error: ${detail}`);
+            log.debug(`[docindex] network error: ${sanitizeErrorForLog(err, settings.bearerToken)}`);
             this.notify("docindex: backend unreachable (Tailscale?)");
             throw new DocindexError("network", "backend unreachable");
         }

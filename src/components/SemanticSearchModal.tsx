@@ -1,4 +1,5 @@
 import { getNoteDisplayText, formatSimilarityPercent } from "@/utils/displayUtils";
+import { sanitizeErrorForLog } from "@/utils/errorSanitizer";
 import type { App } from "obsidian";
 import { MarkdownView, Modal, TFile } from "obsidian";
 import log from "loglevel";
@@ -203,7 +204,7 @@ export function useSemanticSearch(textSearchService: TextSearchServiceLike) {
                 setSelectedIndex(0);
             } catch (error) {
                 if (generationRef.current !== generation) return;
-                log.error("[SemanticSearchModal] search failed:", error);
+                log.error(`[SemanticSearchModal] search failed: ${sanitizeErrorForLog(error)}`);
                 setResults([]);
             } finally {
                 if (generationRef.current === generation) setIsSearching(false);
