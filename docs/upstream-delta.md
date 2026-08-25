@@ -10,7 +10,7 @@ This plugin is forked from [`joybro/obsidian-similar-notes`](https://github.com/
 
 Only the UI surface that applies to a remote-only client:
 
-- `src/application/SettingsService.ts` — settings persistence. Upstream legacy fields (`modelProvider`, `modelId`, `openai*`, `gemini*`, etc.) are retained so existing vault-side `data.json` files survive upgrades without data loss; none of them are read in any live code path.
+- `src/application/SettingsService.ts` — settings persistence. Parses `plugin.loadData()` as untrusted input and builds an allowlisted remote-only settings object; obsolete upstream fields (`modelProvider`, `openai*`, `gemini*`, GPU/indexing/exclusion settings) are dropped on load and not re-persisted.
 - `src/application/SimilarNoteCoordinator.ts` — drives the sidebar view-model. Rewritten to accept a `SimilarNoteFinderLike` interface (satisfied by `RemoteSearchService`) and to read the active file via `vault.cachedRead`.
 - `src/components/SimilarNotesSidebarView.tsx` + `NoteBottomViewReact.tsx` — sidebar and its React view.
 - `src/components/SemanticSearchModal.tsx` — the Cmd/Ctrl+Shift+O modal, adapted to `RemoteSearchService`.
@@ -94,7 +94,7 @@ Only the UI surface that applies to a remote-only client:
 
 **Why no dispatcher?** The `SearchDispatcher` that earlier phases used to route between local and remote providers is dead code with the local pipeline gone — deleted.
 
-**Settings legacy fields.** Upstream fields like `modelProvider`, `modelId`, `openai*` remain in `SimilarNotesSettings` solely to avoid wiping user `data.json` on upgrade.
+**Settings legacy fields.** `SimilarNotesSettings` is remote-only; `SettingsService.load()` validates `plugin.loadData()` field-by-field and discards upstream provider fields (`modelProvider`, `modelId`, `openai*`, `gemini*`, GPU/indexing/exclusion settings) rather than re-persisting them.
 
 **Runtime validation.** The client hand-rolls a type guard against the server's JSON shape. On malformed input: one `Notice`, `disabledForSession = true`. Resets on settings change via `reset()`.
 
@@ -104,5 +104,4 @@ Only the UI surface that applies to a remote-only client:
 
 ## Deviations / TODO
 
-- Prune legacy upstream fields from `SimilarNotesSettings` once a `data.json` migration is written.
 - Flatten `SimilarNoteCoordinator` if/when the sidebar is rewritten to call `RemoteSearchService` directly.
