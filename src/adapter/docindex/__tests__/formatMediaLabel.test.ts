@@ -51,3 +51,54 @@ describe("formatMediaLabel", () => {
         expect(formatMediaLabel({ mediaType: "text", mediaStart: null, mediaEnd: null, truncated: true })).toBe("");
     });
 });
+
+describe("formatMediaLabel — degenerate PDF page ranges fall back to bare label", () => {
+    // Each test is annotated with the one-line mutation that makes it fail.
+
+    it("zero-length range [2,2) → '📄 PDF'", () => {
+        // Mutation: removing the `mediaEnd > mediaStart` guard lets the multi-page
+        // branch run, producing '📄 PDF pages 3–2'.
+        expect(formatMediaLabel({ mediaType: "pdf", mediaStart: 2, mediaEnd: 2, truncated: false })).toBe("📄 PDF");
+    });
+
+    it("inverted range [5,2) → '📄 PDF'", () => {
+        // Mutation: removing the `mediaEnd > mediaStart` guard produces '📄 PDF pages 6–2'.
+        expect(formatMediaLabel({ mediaType: "pdf", mediaStart: 5, mediaEnd: 2, truncated: false })).toBe("📄 PDF");
+    });
+
+    it("negative start [-1,2) → '📄 PDF'", () => {
+        // Mutation: removing the `mediaStart >= 0` guard lets the single-page branch
+        // run when end - start === 1, producing '📄 PDF page 0'.
+        expect(formatMediaLabel({ mediaType: "pdf", mediaStart: -1, mediaEnd: 2, truncated: false })).toBe("📄 PDF");
+    });
+
+    it("NaN start → '📄 PDF'", () => {
+        // Mutation: replacing Number.isInteger with typeof === 'number' accepts NaN.
+        expect(formatMediaLabel({ mediaType: "pdf", mediaStart: NaN, mediaEnd: 3, truncated: false })).toBe("📄 PDF");
+    });
+
+    it("Infinity start → '📄 PDF'", () => {
+        // Mutation: replacing Number.isInteger with Number.isFinite accepts integers
+        // but not Infinity; however Number.isFinite would still reject this. The
+        // load-bearing check here is Number.isInteger (which rejects Infinity).
+        expect(formatMediaLabel({ mediaType: "pdf", mediaStart: Infinity, mediaEnd: Infinity, truncated: false })).toBe("📄 PDF");
+    });
+
+    it("float start 1.5 → '📄 PDF'", () => {
+        // Mutation: removing Number.isInteger (e.g. using Number.isFinite instead)
+        // accepts 1.5 and produces '📄 PDF page 2.5' or similar.
+        expect(formatMediaLabel({ mediaType: "pdf", mediaStart: 1.5, mediaEnd: 3, truncated: false })).toBe("📄 PDF");
+    });
+
+    it("start present with end null → '📄 PDF'", () => {
+        // Mutation: removing the `mediaEnd != null` check would allow the range
+        // block to run with a null end, producing NaN-based output.
+        expect(formatMediaLabel({ mediaType: "pdf", mediaStart: 0, mediaEnd: null, truncated: false })).toBe("📄 PDF");
+    });
+
+    it("end present with start null → '📄 PDF'", () => {
+        // Mutation: removing the `mediaStart != null` check would allow the range
+        // block to run with a null start.
+        expect(formatMediaLabel({ mediaType: "pdf", mediaStart: null, mediaEnd: 3, truncated: false })).toBe("📄 PDF");
+    });
+});

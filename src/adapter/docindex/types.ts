@@ -136,7 +136,12 @@ export function getDisplayScore(hit: DocindexHit): number {
  *
  * PDF page numbers are derived from the 0-based half-open range
  * [mediaStart, mediaEnd): displayed as 1-based inclusive [start+1, end].
- * A truncated flag appends "(truncated)" to signal partial embedding.
+ * The range is used only when both bounds are non-null finite integers,
+ * mediaStart ≥ 0, and mediaEnd > mediaStart. Any other combination
+ * (zero-length, inverted, negative, NaN, Infinity, float) falls back to
+ * the bare "📄 PDF" label so a malformed server can never produce an
+ * inverted or meaningless page string. A truncated flag appends
+ * "(truncated)" to signal partial embedding.
  *
  * Examples:
  *   image, not truncated  → "🖼 Image"
@@ -144,6 +149,8 @@ export function getDisplayScore(hit: DocindexHit): number {
  *   pdf, page 0..1        → "📄 PDF page 1"
  *   pdf, pages 1..3       → "📄 PDF pages 2–3"
  *   pdf, no range         → "📄 PDF"
+ *   pdf, zero-length [2,2) → "📄 PDF"
+ *   pdf, inverted [5,2)   → "📄 PDF"
  *   text                  → ""
  */
 export function formatMediaLabel(hit: Pick<DocindexHit, "mediaType" | "mediaStart" | "mediaEnd" | "truncated">): string {
@@ -153,7 +160,17 @@ export function formatMediaLabel(hit: Pick<DocindexHit, "mediaType" | "mediaStar
     if (mediaType === "image") {
         base = "🖼 Image";
     } else if (mediaType === "pdf") {
-        if (mediaStart != null && mediaEnd != null) {
+        // Valid range: both values must be non-null finite integers, start ≥ 0,
+        // and end strictly greater than start. Any other combination (zero-length,
+        // inverted, negative, NaN, Infinity, float) falls back to the bare label.
+        if (
+            mediaStart != null &&
+            mediaEnd != null &&
+            Number.isInteger(mediaStart) &&
+            Number.isInteger(mediaEnd) &&
+            mediaStart >= 0 &&
+            mediaEnd > mediaStart
+        ) {
             const displayStart = mediaStart + 1;      // 0-based → 1-based
             const displayEnd = mediaEnd;               // exclusive end equals 1-based inclusive end
             if (mediaEnd - mediaStart === 1) {
