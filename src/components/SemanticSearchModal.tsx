@@ -1,4 +1,4 @@
-import { getNoteDisplayText } from "@/utils/displayUtils";
+import { getNoteDisplayText, formatSimilarityPercent } from "@/utils/displayUtils";
 import type { App } from "obsidian";
 import { MarkdownView, Modal, TFile } from "obsidian";
 import log from "loglevel";
@@ -129,9 +129,11 @@ export const SearchResultItem: React.FC<SearchResultItemProps> = ({
                 )}
             </div>
             <div className="suggestion-aux">
-                <span className="suggestion-flair semantic-search-score">
-                    {`${Math.round(note.similarity * 100)}%`}
-                </span>
+                {formatSimilarityPercent(note.similarity) && (
+                    <span className="suggestion-flair semantic-search-score">
+                        {formatSimilarityPercent(note.similarity)}
+                    </span>
+                )}
             </div>
         </div>
     );

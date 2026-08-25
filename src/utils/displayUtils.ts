@@ -53,3 +53,14 @@ export function abbreviatePath(path: string, maxLength?: number): string {
 
     return `${path.slice(0, startLength)}...${path.slice(-endLength)}`;
 }
+
+/**
+ * Formats a 0..1 similarity score as a rounded percentage string, or `null`
+ * when the score is absent (media hit with a rank-derived score, or a
+ * legacy server that didn't supply `score_normalized`). Callers must not
+ * render a percentage in that case.
+ */
+export function formatSimilarityPercent(similarity: number | undefined): string | null {
+    if (similarity === undefined) return null;
+    return `${Math.round(similarity * 100)}%`;
+}

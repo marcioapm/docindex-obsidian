@@ -175,10 +175,10 @@ export function renderDocindexSection(props: DocindexSettingsSectionProps): void
     new Setting(containerEl)
         .setName("Relevance threshold")
         .setDesc(
-            "Drop results with a normalized score below this value. " +
-                "0 = show everything the server ranked. " +
-                "0.40 ≈ rank ≤ 15 in at least one branch (default). " +
-                "Raise toward 0.60 for tighter results."
+            "Drop text results with a normalized score below this value. " +
+                "0 = show everything the server ranked. Default 0.40; raise " +
+                "toward 0.60 for tighter results. Does not affect image/PDF " +
+                "results — their score reflects rank, not query relevance."
         )
         .addSlider((slider) => {
             slider

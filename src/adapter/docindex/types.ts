@@ -47,8 +47,10 @@ export interface DocindexHit {
     /** RRF fusion score. Equals `score` when the server supplies it. */
     scoreRrf?: number;
     /**
-     * Query-independent 0..1 display score. When the server doesn't supply
-     * it, clients should fall back to `score` (the RRF value).
+     * Calibrated 0..1 relevance score for text hits. For non-text hits this
+     * currently holds `(k+1)/(k+vector_rank)` — a vector-rank position, not
+     * a relevance measure — so it must not drive filtering or percentage
+     * display for media. Absent on servers predating v0.3.
      */
     scoreNormalized?: number;
     chunkId: string;
@@ -74,10 +76,11 @@ export interface DocindexSettings {
     bearerToken: string;
     limit: number;
     /**
-     * Hits with `scoreNormalized` (or `score`, as fallback) below this value
-     * are hidden from both the sidebar and the semantic-search modal. Range
-     * 0.0-1.0. 0 = show everything. 1 = only rank-1-in-both-branches hits.
-     * Typical sweet spot: 0.35-0.60.
+     * Text hits with `scoreNormalized` below this value are hidden from both
+     * the sidebar and the semantic-search modal. Range 0.0-1.0. 0 = show
+     * everything. 1 = only rank-1-in-both-branches hits. Typical sweet spot:
+     * 0.35-0.60. Does not apply to media hits (see `isThresholdEligible`) or
+     * to hits from servers that don't supply `scoreNormalized`.
      */
     relevanceThreshold: number;
 }
@@ -91,16 +94,24 @@ export const DEFAULT_DOCINDEX_SETTINGS: DocindexSettings = {
 };
 
 /**
- * Normalized-score accessor with graceful fallback.
- *
- * Returns `hit.scoreNormalized` when the server supplied it (v0.3+), else
- * `hit.score` (the RRF value). The fallback is lossy — RRF scores are not
- * in [0, 1] — but it keeps old servers functional during rollout. Consumers
- * that want strict fallback semantics should check `scoreNormalized`
- * directly.
+ * Returns `hit.scoreNormalized`, or `undefined` when the server didn't
+ * supply it (pre-v0.3). RRF (`hit.score`) is not in [0, 1] and must never
+ * be used as a display or threshold value — there is no calibrated
+ * fallback for legacy responses.
  */
-export function getDisplayScore(hit: DocindexHit): number {
-    return hit.scoreNormalized ?? hit.score;
+export function getDisplayScore(hit: DocindexHit): number | undefined {
+    return hit.scoreNormalized;
+}
+
+/**
+ * A hit's score can drive `relevanceThreshold` filtering only when it is
+ * both present and query-dependent. Media `scoreNormalized` is currently
+ * `(k+1)/(k+vector_rank)` — a function of rank, not of the query — so it
+ * would either admit the top hit unconditionally or reject genuinely
+ * relevant results past a fixed rank. Text scores are query-dependent.
+ */
+export function isThresholdEligible(hit: DocindexHit): boolean {
+    return hit.scoreNormalized !== undefined && hit.mediaType === "text";
 }
 
 /**

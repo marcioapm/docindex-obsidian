@@ -1,4 +1,4 @@
-import { getNoteDisplayText } from "@/utils/displayUtils";
+import { getNoteDisplayText, formatSimilarityPercent } from "@/utils/displayUtils";
 import type { MarkdownView, TFile, Workspace } from "obsidian";
 import { Menu } from "obsidian";
 import { useEffect, useLayoutEffect, useState } from "react";
@@ -8,7 +8,8 @@ import { formatMediaLabel } from "@/adapter/docindex";
 export interface SimilarNoteEntry {
     file: TFile;
     title: string;
-    similarity: number;
+    /** 0..1 relevance score, or `undefined` when none is available to display. */
+    similarity: number | undefined;
     preview: string;
     sourceChunk?: string;
     /**
@@ -251,9 +252,11 @@ const SearchResult = ({
                     {mediaLabel && (
                         <div className="tree-item-flair docindex-media-type">{mediaLabel}</div>
                     )}
-                    <div className="tree-item-flair">
-                        {`${Math.round(note.similarity * 100)}%`}
-                    </div>
+                    {formatSimilarityPercent(note.similarity) && (
+                        <div className="tree-item-flair">
+                            {formatSimilarityPercent(note.similarity)}
+                        </div>
+                    )}
                 </div>
             </div>
             {shouldRender && (

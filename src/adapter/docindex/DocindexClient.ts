@@ -2,6 +2,7 @@ import { Notice, requestUrl, type RequestUrlParam, type RequestUrlResponse } fro
 import log from "loglevel";
 import {
     getDisplayScore,
+    isThresholdEligible,
     type DocindexHit,
     type DocindexHitWire,
     type DocindexSearchResponse,
@@ -182,14 +183,19 @@ function isRecord(v: unknown): v is Record<string, unknown> {
  * Drops hits whose display score is below `threshold`. Threshold ≤ 0 is a
  * no-op so users who disable filtering see everything the server returned.
  *
- * Uses `getDisplayScore`, which falls back to `score` when the server
- * predates v0.3 and didn't emit `score_normalized`. That fallback is lossy
- * (RRF scores aren't in [0, 1]), so during rollout the threshold behaves
- * roughly like "keep what the server ranked" — still better than nothing.
+ * Only applies to threshold-eligible hits (see `isThresholdEligible`):
+ * text hits with a server-supplied `scoreNormalized`. Media hits and
+ * legacy responses without `scoreNormalized` pass through unfiltered —
+ * there is no calibrated, query-dependent score to compare against the
+ * threshold.
  */
 export function filterByThreshold(hits: DocindexHit[], threshold: number): DocindexHit[] {
     if (!(threshold > 0)) return hits;
-    return hits.filter((h) => getDisplayScore(h) >= threshold);
+    return hits.filter((h) => {
+        if (!isThresholdEligible(h)) return true;
+        const score = getDisplayScore(h);
+        return score !== undefined && score >= threshold;
+    });
 }
 
 /** Valid values for the `media_type` field. Used in the runtime guard. */

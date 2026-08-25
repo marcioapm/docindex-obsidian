@@ -277,23 +277,51 @@ describe("DocindexClient — URL handling and relevance threshold", () => {
         expect(res.hits).toHaveLength(1);
     });
 
-    it("falls back to score when score_normalized is absent (old server)", async () => {
-        // With an old server, hit.score is the RRF value (not in [0,1]). Setting
-        // a tiny threshold should still let high-RRF hits through; setting a
-        // huge one filters everything. This keeps pre-v0.3 servers usable.
+    it("does not threshold a legacy response lacking score_normalized, even at the shipped default", async () => {
+        // Real RRF values observed from a legacy deployment; all below the
+        // shipped default (0.4). Raw RRF must never be compared against the
+        // [0,1] threshold, so all three hits must survive.
         const requestFn = vi.fn().mockResolvedValue({
             status: 200,
             headers: {},
             json: {
                 hits: [
-                    { path: "a.md", title: "a", heading_path: [], snippet: "", score: 0.03, chunk_id: "1" },
-                    { path: "b.md", title: "b", heading_path: [], snippet: "", score: 0.01, chunk_id: "2" },
+                    { path: "a.md", title: "a", heading_path: [], snippet: "", score: 0.01639, chunk_id: "1" },
+                    { path: "b.md", title: "b", heading_path: [], snippet: "", score: 0.01613, chunk_id: "2" },
+                    { path: "c.md", title: "c", heading_path: [], snippet: "", score: 0.01587, chunk_id: "3" },
                 ],
             },
         });
-        const { client } = makeClient({ relevanceThreshold: 0.02 }, requestFn);
+        const { client } = makeClient({ relevanceThreshold: 0.4 }, requestFn);
         const res = await client.search("q");
-        expect(res.hits.map((h) => h.path)).toEqual(["a.md"]);
+        expect(res.hits.map((h) => h.path)).toEqual(["a.md", "b.md", "c.md"]);
+        expect(res.hits.every((h) => h.scoreNormalized === undefined)).toBe(true);
+    });
+
+    it("does not threshold a media hit even when scoreNormalized is present and below the cutoff", async () => {
+        // Media scoreNormalized is rank-derived, not query-dependent — the
+        // relevance threshold must not apply to it regardless of value.
+        const requestFn = vi.fn().mockResolvedValue({
+            status: 200,
+            headers: {},
+            json: {
+                hits: [
+                    {
+                        path: "scan.pdf",
+                        title: "scan",
+                        heading_path: [],
+                        snippet: "",
+                        score: 0.05,
+                        score_normalized: 0.05,
+                        chunk_id: "1",
+                        media_type: "pdf",
+                    },
+                ],
+            },
+        });
+        const { client } = makeClient({ relevanceThreshold: 0.4 }, requestFn);
+        const res = await client.search("q");
+        expect(res.hits.map((h) => h.path)).toEqual(["scan.pdf"]);
     });
 });
 

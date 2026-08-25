@@ -32,12 +32,12 @@ describe("RemoteSearchService", () => {
         expect(res.similarNotes[0].similarity).toBe(0.87);
     });
 
-    it("falls back to raw score when score_normalized is missing", async () => {
+    it("leaves similarity undefined when score_normalized is missing (legacy server)", async () => {
         const svc = new RemoteSearchService(
             mockClient({ hits: [hit({ scoreNormalized: undefined, score: 0.42 })] })
         );
         const res = await svc.findSimilarNotesFromText("query");
-        expect(res.similarNotes[0].similarity).toBe(0.42);
+        expect(res.similarNotes[0].similarity).toBeUndefined();
     });
 
     it("findSimilarNotes also carries score_normalized forward", async () => {
