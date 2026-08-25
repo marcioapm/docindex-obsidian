@@ -1,20 +1,42 @@
+import { Notice } from "obsidian";
 import type { Note } from "@/domain/model/Note";
 import { SimilarNote } from "@/domain/model/SimilarNote";
-import type { DocindexClient } from "./DocindexClient";
+import { DocindexError, type DocindexClient } from "./DocindexClient";
 import { getDisplayScore, type DocindexHit } from "./types";
 
 /**
  * Result shape for text-based semantic search.
- *
- * Previously lived in `src/domain/service/TextSearchService.ts` when the plugin
- * supported a local embedding pipeline. After the strip to remote-only this is
- * the single source of truth for the shape.
  */
 export interface TextSearchResult {
     similarNotes: SimilarNote[];
     tokenCount: number;
     maxTokens: number;
     isOverLimit: boolean;
+}
+
+/**
+ * Runs a `DocindexClient` request and converts a thrown `DocindexError`
+ * into an empty hit list. `DocindexClient` already shows a `Notice` for
+ * every kind except `not-configured` (disabled provider, empty URL, empty
+ * token) — that kind means "search is silently doing nothing" and would
+ * otherwise be indistinguishable from a query with zero matches, so it
+ * gets its own `Notice` here. A non-`DocindexError` (e.g. a bug thrown
+ * synchronously in a caller-supplied argument) is not a transport failure
+ * and is rethrown rather than swallowed.
+ */
+async function runRequest(request: () => Promise<{ hits: DocindexHit[] }>): Promise<DocindexHit[]> {
+    try {
+        const response = await request();
+        return response.hits;
+    } catch (err) {
+        if (err instanceof DocindexError) {
+            if (err.kind === "not-configured") {
+                new Notice("docindex: search is disabled or not configured (see settings)");
+            }
+            return [];
+        }
+        throw err;
+    }
 }
 
 /**
@@ -26,19 +48,14 @@ export class RemoteSearchService {
 
     /** Text-to-similar-notes lookup. Matches the former `TextSearchService` surface. */
     async findSimilarNotesFromText(text: string, limit = 10): Promise<TextSearchResult> {
-        try {
-            const response = await this.client.search(text, limit);
-            return {
-                similarNotes: groupHitsByPath(response.hits, text).slice(0, limit),
-                // Remote backend handles tokenization itself; surface empty stats.
-                tokenCount: 0,
-                maxTokens: 0,
-                isOverLimit: false,
-            };
-        } catch {
-            // DocindexClient already surfaced a Notice.
-            return { similarNotes: [], tokenCount: 0, maxTokens: 0, isOverLimit: false };
-        }
+        const hits = await runRequest(() => this.client.search(text, limit));
+        return {
+            similarNotes: groupHitsByPath(hits, text).slice(0, limit),
+            // Remote backend handles tokenization itself; surface empty stats.
+            tokenCount: 0,
+            maxTokens: 0,
+            isOverLimit: false,
+        };
     }
 
     /** Stub — the remote backend does not expose a token-limit endpoint. */
@@ -49,13 +66,9 @@ export class RemoteSearchService {
     /** Path-to-similar-notes lookup. Matches the former `SimilarNoteFinder` surface. */
     async findSimilarNotes(note: Note, limit = 5): Promise<SimilarNote[]> {
         if (!note.path) return [];
-        try {
-            const response = await this.client.similar(note.path, limit);
-            const filtered = response.hits.filter((h) => h.path !== note.path);
-            return groupHitsByPath(filtered, note.content ?? "").slice(0, limit);
-        } catch {
-            return [];
-        }
+        const hits = await runRequest(() => this.client.similar(note.path, limit));
+        const filtered = hits.filter((h) => h.path !== note.path);
+        return groupHitsByPath(filtered, note.content ?? "").slice(0, limit);
     }
 }
 
