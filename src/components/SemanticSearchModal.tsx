@@ -16,8 +16,8 @@ interface TextSearchServiceLike {
     findSimilarNotesFromText(text: string, limit?: number): Promise<TextSearchResult>;
 }
 
-const MIN_SEARCH_LENGTH = 3;
-const DEBOUNCE_MS = 300;
+export const MIN_SEARCH_LENGTH = 3;
+export const DEBOUNCE_MS = 300;
 
 // Platform-specific modifier keys
 const isMac = typeof navigator !== "undefined" && navigator.platform.includes("Mac");
@@ -146,7 +146,12 @@ interface SemanticSearchContentProps {
     onClose: () => void;
 }
 
-function useSemanticSearch(textSearchService: TextSearchServiceLike) {
+/**
+ * Debounced remote search with a request-generation guard against
+ * out-of-order completions. Exported for direct hook testing — the
+ * generation guard is otherwise unobservable through the DOM alone.
+ */
+export function useSemanticSearch(textSearchService: TextSearchServiceLike) {
     const [query, setQuery] = useState("");
     const [results, setResults] = useState<SimilarNote[]>([]);
     const [selectedIndex, setSelectedIndex] = useState(0);
@@ -158,6 +163,12 @@ function useSemanticSearch(textSearchService: TextSearchServiceLike) {
     const [selectionSource, setSelectionSource] =
         useState<"keyboard" | "reset">("reset");
     const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+    // Bumped at the start of every performSearch call (including the
+    // short-query branch) and on unmount. A request applies its result only
+    // if this counter hasn't moved since it started — otherwise a slower
+    // older request would overwrite a newer one's results or clear the
+    // spinner while the newer request is still in flight.
+    const generationRef = useRef(0);
 
     const selectByKeyboard = useCallback((updater: (prev: number) => number) => {
         setSelectionSource("keyboard");
@@ -166,6 +177,8 @@ function useSemanticSearch(textSearchService: TextSearchServiceLike) {
 
     const performSearch = useCallback(
         async (searchQuery: string) => {
+            const generation = ++generationRef.current;
+
             if (searchQuery.length < MIN_SEARCH_LENGTH) {
                 setResults([]);
                 setTokenWarning(null);
@@ -176,6 +189,7 @@ function useSemanticSearch(textSearchService: TextSearchServiceLike) {
             try {
                 const searchResult =
                     await textSearchService.findSimilarNotesFromText(searchQuery);
+                if (generationRef.current !== generation) return;
 
                 if (searchResult.isOverLimit) {
                     setTokenWarning(
@@ -188,10 +202,11 @@ function useSemanticSearch(textSearchService: TextSearchServiceLike) {
                 setSelectionSource("reset");
                 setSelectedIndex(0);
             } catch (error) {
+                if (generationRef.current !== generation) return;
                 log.error("[SemanticSearchModal] search failed:", error);
                 setResults([]);
             } finally {
-                setIsSearching(false);
+                if (generationRef.current === generation) setIsSearching(false);
             }
         },
         [textSearchService]
@@ -204,6 +219,14 @@ function useSemanticSearch(textSearchService: TextSearchServiceLike) {
             if (debounceRef.current) clearTimeout(debounceRef.current);
         };
     }, [query, performSearch]);
+
+    // Invalidate any in-flight request on unmount so its resolution can't
+    // apply state to a component that's gone.
+    useEffect(() => {
+        return () => {
+            generationRef.current++;
+        };
+    }, []);
 
     return {
         query,
