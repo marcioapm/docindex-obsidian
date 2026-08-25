@@ -19,6 +19,8 @@ interface SimilarNoteFinderLike {
 
 interface SimilarNoteCacheEntry {
     mtime: number;
+    /** Settings generation active when this entry was computed (see `settingsGeneration`). */
+    settingsGeneration: number;
     notes: SimilarNoteEntry[];
 }
 
@@ -51,6 +53,13 @@ export class SimilarNoteCoordinator {
         bottomResultCount: 5,
     });
     private cache = new Map<string, SimilarNoteCacheEntry>();
+    /**
+     * Bumped on every settings change. Cache entries are stamped with the
+     * generation active when they were computed, so a stale entry from
+     * before a docindex/token/threshold/showSourceChunk change is never
+     * served — without enumerating each affected field individually.
+     */
+    private settingsGeneration = 0;
 
     constructor(
         private readonly vault: Vault,
@@ -67,13 +76,8 @@ export class SimilarNoteCoordinator {
 
         this.settingsService
             .getNewSettingsObservable()
-            .subscribe((newSettings) => {
-                if (
-                    newSettings.sidebarResultCount !== undefined ||
-                    newSettings.bottomResultCount !== undefined
-                ) {
-                    this.cache.clear();
-                }
+            .subscribe(() => {
+                this.settingsGeneration++;
 
                 const s = this.settingsService.get();
                 this.noteBottomViewModel$.next({
@@ -89,18 +93,20 @@ export class SimilarNoteCoordinator {
         return this.noteBottomViewModel$.asObservable();
     }
 
-    async onFileOpen(file: TFile | null) {
-        if (!file || !INDEXABLE_TEXT_EXTENSIONS.has(file.extension)) return;
-        this.emitNoteBottomViewModel(file);
+    onFileOpen(file: TFile | null): Promise<void> {
+        if (!file || !INDEXABLE_TEXT_EXTENSIONS.has(file.extension)) {
+            return Promise.resolve();
+        }
+        return this.emitNoteBottomViewModel(file);
     }
 
-    async emitNoteBottomViewModelFromPath(path: string) {
+    emitNoteBottomViewModelFromPath(path: string): Promise<void> {
         const file = this.vault.getFileByPath(path);
-        if (!file) return;
-        this.emitNoteBottomViewModel(file);
+        if (!file) return Promise.resolve();
+        return this.emitNoteBottomViewModel(file);
     }
 
-    async emitNoteBottomViewModel(file: TFile) {
+    async emitNoteBottomViewModel(file: TFile): Promise<void> {
         const similarNotes = await this.getSimilarNotes(file);
         const settings = this.settingsService.get();
         this.noteBottomViewModel$.next({
@@ -114,7 +120,11 @@ export class SimilarNoteCoordinator {
 
     async getSimilarNotes(file: TFile): Promise<SimilarNoteEntry[]> {
         const cacheEntry = this.cache.get(file.path);
-        if (cacheEntry && cacheEntry.mtime === file.stat.mtime) {
+        if (
+            cacheEntry &&
+            cacheEntry.mtime === file.stat.mtime &&
+            cacheEntry.settingsGeneration === this.settingsGeneration
+        ) {
             return cacheEntry.notes;
         }
 
@@ -160,6 +170,7 @@ export class SimilarNoteCoordinator {
 
         this.cache.set(file.path, {
             mtime: file.stat.mtime,
+            settingsGeneration: this.settingsGeneration,
             notes: similarNoteEntries,
         });
         if (this.cache.size > MAX_CACHE_SIZE) {

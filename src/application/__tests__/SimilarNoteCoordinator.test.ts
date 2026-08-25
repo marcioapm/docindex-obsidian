@@ -18,17 +18,23 @@ function makeTFile(path: string, extension: string): TFile {
     } as unknown as TFile;
 }
 
-/** SettingsService stub. Returns a minimal settings object. */
-function makeSettingsService() {
+/** SettingsService stub. Returns a mutable settings object; `push` updates it and emits on the observable, mirroring SettingsService.update. */
+function makeSettingsService(overrides: Record<string, unknown> = {}) {
     const subject = new Subject<Record<string, unknown>>();
+    let settings: Record<string, unknown> = {
+        noteDisplayMode: "title",
+        sidebarResultCount: 10,
+        bottomResultCount: 5,
+        showSourceChunk: false,
+        ...overrides,
+    };
     return {
-        get: vi.fn().mockReturnValue({
-            noteDisplayMode: "title",
-            sidebarResultCount: 10,
-            bottomResultCount: 5,
-            showSourceChunk: false,
-        }),
+        get: vi.fn(() => settings),
         getNewSettingsObservable: vi.fn().mockReturnValue(subject.asObservable()),
+        push: (partial: Record<string, unknown>) => {
+            settings = { ...settings, ...partial };
+            subject.next(partial);
+        },
     };
 }
 
@@ -149,5 +155,156 @@ describe("SimilarNoteCoordinator — onFileOpen extension filter", () => {
 
         await coordinator.onFileOpen(null);
         expect(finder.findSimilarNotes).not.toHaveBeenCalled();
+    });
+});
+
+describe("SimilarNoteCoordinator — cache invalidation on settings change", () => {
+    it("serves a cached entry unchanged when mtime and settings are both unchanged", async () => {
+        const finder = makeFinder([]);
+        const mdFile = makeTFile("notes/foo.md", "md");
+        const vault = makeVault(new Map([["notes/foo.md", mdFile]]));
+        const coordinator = new SimilarNoteCoordinator(
+            vault as Vault,
+            finder,
+            makeSettingsService() as ReturnType<typeof makeSettingsService>
+        );
+
+        await coordinator.getSimilarNotes(mdFile);
+        await coordinator.getSimilarNotes(mdFile);
+        expect(finder.findSimilarNotes).toHaveBeenCalledTimes(1);
+    });
+
+    it("re-fetches after a showSourceChunk change even though mtime is unchanged", async () => {
+        // showSourceChunk is not one of the two result-count fields the old
+        // code enumerated, but it changes what getSimilarNotes emits.
+        const finder = makeFinder([]);
+        const mdFile = makeTFile("notes/foo.md", "md");
+        const vault = makeVault(new Map([["notes/foo.md", mdFile]]));
+        const settingsService = makeSettingsService({ showSourceChunk: false });
+        const coordinator = new SimilarNoteCoordinator(
+            vault as Vault,
+            finder,
+            settingsService as ReturnType<typeof makeSettingsService>
+        );
+
+        await coordinator.getSimilarNotes(mdFile);
+        settingsService.push({ showSourceChunk: true });
+        await coordinator.getSimilarNotes(mdFile);
+
+        expect(finder.findSimilarNotes).toHaveBeenCalledTimes(2);
+    });
+
+    it("re-fetches after a docindex config change even though mtime is unchanged", async () => {
+        const finder = makeFinder([]);
+        const mdFile = makeTFile("notes/foo.md", "md");
+        const vault = makeVault(new Map([["notes/foo.md", mdFile]]));
+        const settingsService = makeSettingsService({ docindex: { backendUrl: "http://a" } });
+        const coordinator = new SimilarNoteCoordinator(
+            vault as Vault,
+            finder,
+            settingsService as ReturnType<typeof makeSettingsService>
+        );
+
+        await coordinator.getSimilarNotes(mdFile);
+        settingsService.push({ docindex: { backendUrl: "http://b" } });
+        await coordinator.getSimilarNotes(mdFile);
+
+        expect(finder.findSimilarNotes).toHaveBeenCalledTimes(2);
+    });
+
+    it("still re-fetches on a sidebarResultCount/bottomResultCount change (regression guard)", async () => {
+        const finder = makeFinder([]);
+        const mdFile = makeTFile("notes/foo.md", "md");
+        const vault = makeVault(new Map([["notes/foo.md", mdFile]]));
+        const settingsService = makeSettingsService();
+        const coordinator = new SimilarNoteCoordinator(
+            vault as Vault,
+            finder,
+            settingsService as ReturnType<typeof makeSettingsService>
+        );
+
+        await coordinator.getSimilarNotes(mdFile);
+        settingsService.push({ sidebarResultCount: 20 });
+        await coordinator.getSimilarNotes(mdFile);
+
+        expect(finder.findSimilarNotes).toHaveBeenCalledTimes(2);
+    });
+});
+
+describe("SimilarNoteCoordinator — onFileOpen/emitNoteBottomViewModelFromPath return the emission promise", () => {
+    it("onFileOpen stays pending until search and emission complete", async () => {
+        let resolveSearch!: (notes: SimilarNote[]) => void;
+        const finder = {
+            findSimilarNotes: vi.fn(
+                () => new Promise<SimilarNote[]>((resolve) => { resolveSearch = resolve; })
+            ),
+        };
+        const mdFile = makeTFile("notes/foo.md", "md");
+        const vault = makeVault(new Map([["notes/foo.md", mdFile]]));
+        const coordinator = new SimilarNoteCoordinator(
+            vault as Vault,
+            finder,
+            makeSettingsService() as ReturnType<typeof makeSettingsService>
+        );
+
+        let settled = false;
+        const promise = coordinator.onFileOpen(mdFile).then(() => {
+            settled = true;
+        });
+
+        // Two microtask flushes without resolving the search — must still be pending.
+        await Promise.resolve();
+        await Promise.resolve();
+        expect(settled).toBe(false);
+
+        resolveSearch([]);
+        await promise;
+        expect(settled).toBe(true);
+    });
+
+    it("emitNoteBottomViewModelFromPath stays pending until search and emission complete", async () => {
+        let resolveSearch!: (notes: SimilarNote[]) => void;
+        const finder = {
+            findSimilarNotes: vi.fn(
+                () => new Promise<SimilarNote[]>((resolve) => { resolveSearch = resolve; })
+            ),
+        };
+        const mdFile = makeTFile("notes/foo.md", "md");
+        const vault = makeVault(new Map([["notes/foo.md", mdFile]]));
+        const coordinator = new SimilarNoteCoordinator(
+            vault as Vault,
+            finder,
+            makeSettingsService() as ReturnType<typeof makeSettingsService>
+        );
+
+        let settled = false;
+        const promise = coordinator
+            .emitNoteBottomViewModelFromPath("notes/foo.md")
+            .then(() => {
+                settled = true;
+            });
+
+        await Promise.resolve();
+        await Promise.resolve();
+        expect(settled).toBe(false);
+
+        resolveSearch([]);
+        await promise;
+        expect(settled).toBe(true);
+    });
+
+    it("a rejection from findSimilarNotes propagates to the awaited onFileOpen call", async () => {
+        const finder = {
+            findSimilarNotes: vi.fn().mockRejectedValue(new Error("boom")),
+        };
+        const mdFile = makeTFile("notes/foo.md", "md");
+        const vault = makeVault(new Map([["notes/foo.md", mdFile]]));
+        const coordinator = new SimilarNoteCoordinator(
+            vault as Vault,
+            finder,
+            makeSettingsService() as ReturnType<typeof makeSettingsService>
+        );
+
+        await expect(coordinator.onFileOpen(mdFile)).rejects.toThrow("boom");
     });
 });
