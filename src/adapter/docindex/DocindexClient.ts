@@ -7,6 +7,7 @@ import {
     type DocindexSearchResponse,
     type DocindexSearchResponseWire,
     type DocindexSettings,
+    type MediaType,
 } from "./types";
 
 /**
@@ -162,6 +163,13 @@ function toDomainHit(wire: DocindexHitWire): DocindexHit {
         scoreRrf: wire.score_rrf,
         scoreNormalized: wire.score_normalized,
         chunkId: String(wire.chunk_id),
+        // Default to "text" — old servers pre-dating media indexing don't emit media_type.
+        mediaType: wire.media_type ?? "text",
+        mimeType: wire.mime_type,
+        mediaStart: wire.media_start,
+        mediaEnd: wire.media_end,
+        mediaUnit: wire.media_unit,
+        truncated: wire.truncated,
     };
 }
 
@@ -183,6 +191,9 @@ export function filterByThreshold(hits: DocindexHit[], threshold: number): Docin
     return hits.filter((h) => getDisplayScore(h) >= threshold);
 }
 
+/** Valid values for the `media_type` field. Used in the runtime guard. */
+const VALID_MEDIA_TYPES: ReadonlySet<string> = new Set<MediaType>(["text", "image", "pdf"]);
+
 function isHitWire(v: unknown): v is DocindexHitWire {
     if (!isRecord(v)) return false;
     if (typeof v.path !== "string") return false;
@@ -199,6 +210,15 @@ function isHitWire(v: unknown): v is DocindexHitWire {
             return false;
         }
     }
+    // Media fields: all optional. null and undefined both mean "not applicable"
+    // (`!= null` catches both). A present non-null value with the wrong type fails
+    // immediately so server regressions surface before they corrupt domain state.
+    if (v.media_type != null && !VALID_MEDIA_TYPES.has(v.media_type as string)) return false;
+    if (v.mime_type !== undefined && v.mime_type !== null && typeof v.mime_type !== "string") return false;
+    if (v.media_start !== undefined && v.media_start !== null && typeof v.media_start !== "number") return false;
+    if (v.media_end !== undefined && v.media_end !== null && typeof v.media_end !== "number") return false;
+    if (v.media_unit !== undefined && v.media_unit !== null && typeof v.media_unit !== "string") return false;
+    if (v.truncated != null && typeof v.truncated !== "boolean") return false;
     return true;
 }
 

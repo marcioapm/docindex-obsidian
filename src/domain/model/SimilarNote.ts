@@ -1,3 +1,5 @@
+import type { MediaType } from "@/adapter/docindex";
+
 export class SimilarNote {
     constructor(
         public readonly title: string,
@@ -28,6 +30,14 @@ export class SimilarNote {
          * DOM state like an expanded preview. Empty string = unknown
          * (legacy or non-remote providers).
          */
-        public readonly chunkId: string = ""
+        public readonly chunkId: string = "",
+        /** Content category of the top-scoring chunk. Defaults to "text". */
+        public readonly mediaType: MediaType = "text",
+        /** 0-based start of the half-open page range [mediaStart, mediaEnd). Null = not paginated. */
+        public readonly mediaStart: number | null = null,
+        /** 0-based exclusive end of the page range. Null = not paginated. */
+        public readonly mediaEnd: number | null = null,
+        /** Partial embedding indicator. Absent from old servers; treat as false. */
+        public readonly truncated: boolean = false
     ) {}
 }

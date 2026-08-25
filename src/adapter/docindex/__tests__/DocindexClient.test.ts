@@ -62,6 +62,7 @@ describe("DocindexClient — request shape", () => {
                 snippet: "some snippet",
                 score: 0.87,
                 chunkId: "abc:0",
+                mediaType: "text",
             },
         ]);
         // Verify body + auth header (but do not leak token into the assertion output).

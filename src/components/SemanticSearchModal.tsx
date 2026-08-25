@@ -6,6 +6,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import type { SimilarNote } from "@/domain/model/SimilarNote";
 import type { TextSearchResult } from "@/adapter/docindex";
+import { formatMediaLabel } from "@/adapter/docindex";
 
 /**
  * Minimal structural surface the modal depends on. Satisfied by
@@ -62,7 +63,7 @@ interface SearchResultItemProps {
     onInsertLink: () => void;
 }
 
-const SearchResultItem: React.FC<SearchResultItemProps> = ({
+export const SearchResultItem: React.FC<SearchResultItemProps> = ({
     note,
     file,
     isSelected,
@@ -99,6 +100,13 @@ const SearchResultItem: React.FC<SearchResultItemProps> = ({
         ? getNoteDisplayText(file, note.title, { noteDisplayMode }, allFiles)
         : note.title;
 
+    const mediaLabel = formatMediaLabel({
+        mediaType: note.mediaType,
+        mediaStart: note.mediaStart,
+        mediaEnd: note.mediaEnd,
+        truncated: note.truncated,
+    });
+
     // `.is-selected` tracks keyboard focus; `.is-hovered` tracks the mouse cursor.
     // Separate classes prevent a stale hover highlight when the keyboard selection
     // and mouse position differ.
@@ -116,6 +124,9 @@ const SearchResultItem: React.FC<SearchResultItemProps> = ({
         >
             <div className="suggestion-content">
                 <div className="suggestion-title">{displayText}</div>
+                {mediaLabel && (
+                    <div className="docindex-media-type">{mediaLabel}</div>
+                )}
             </div>
             <div className="suggestion-aux">
                 <span className="suggestion-flair semantic-search-score">

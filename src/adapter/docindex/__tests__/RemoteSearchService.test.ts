@@ -13,6 +13,7 @@ function hit(overrides: Partial<DocindexHit> = {}): DocindexHit {
         score: 0.03,
         scoreNormalized: 0.87,
         chunkId: "c1",
+        mediaType: "text",
         ...overrides,
     };
 }
@@ -46,5 +47,28 @@ describe("RemoteSearchService", () => {
         const note = new Note("source.md", "source", "content", []);
         const [primary] = await svc.findSimilarNotes(note);
         expect(primary.similarity).toBe(0.6);
+    });
+
+    it("groupHitsByPath propagates all four media fields onto SimilarNote", async () => {
+        // Non-default pdf values ensure each field is independently load-bearing.
+        const svc = new RemoteSearchService(
+            mockClient({
+                hits: [
+                    hit({
+                        path: "scan.pdf",
+                        mediaType: "pdf",
+                        mediaStart: 2,
+                        mediaEnd: 5,
+                        truncated: true,
+                    }),
+                ],
+            })
+        );
+        const note = new Note("source.md", "source", "content", []);
+        const [result] = await svc.findSimilarNotes(note);
+        expect(result.mediaType).toBe("pdf");
+        expect(result.mediaStart).toBe(2);
+        expect(result.mediaEnd).toBe(5);
+        expect(result.truncated).toBe(true);
     });
 });

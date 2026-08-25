@@ -6,6 +6,9 @@
  * in `DocindexClient`.
  */
 
+/** Discriminated union matching the server's `MediaType` enum. */
+export type MediaType = "text" | "image" | "pdf";
+
 export interface DocindexHitWire {
     path: string;
     title: string;
@@ -19,6 +22,16 @@ export interface DocindexHitWire {
     score_rrf?: number;
     score_normalized?: number;
     chunk_id: string | number;
+    // Optional media fields: absent on old servers. null and undefined both
+    // mean "not applicable" — see isHitWire for the validation contract.
+    media_type?: MediaType;
+    mime_type?: string | null;
+    /** 0-based start of the half-open page range [media_start, media_end). */
+    media_start?: number | null;
+    /** 0-based exclusive end of the page range. */
+    media_end?: number | null;
+    media_unit?: string | null;
+    truncated?: boolean;
 }
 
 export interface DocindexSearchResponseWire {
@@ -39,6 +52,16 @@ export interface DocindexHit {
      */
     scoreNormalized?: number;
     chunkId: string;
+    /** Defaults to "text" when absent from the wire payload (old servers). */
+    mediaType: MediaType;
+    mimeType?: string | null;
+    /** 0-based start of the half-open page range [mediaStart, mediaEnd). Null = not paginated. */
+    mediaStart?: number | null;
+    /** 0-based exclusive end of the page range. Null = not paginated. */
+    mediaEnd?: number | null;
+    mediaUnit?: string | null;
+    /** Undefined when absent from wire; treat as false. */
+    truncated?: boolean;
 }
 
 export interface DocindexSearchResponse {
@@ -78,4 +101,50 @@ export const DEFAULT_DOCINDEX_SETTINGS: DocindexSettings = {
  */
 export function getDisplayScore(hit: DocindexHit): number {
     return hit.scoreNormalized ?? hit.score;
+}
+
+/**
+ * Returns a human-readable label for the media type of a hit, or `""` for
+ * text hits (so callers can use `label && <span>{label}</span>` without a
+ * branch).
+ *
+ * PDF page numbers use the 0-based half-open range [mediaStart, mediaEnd)
+ * converted to 1-based inclusive display. Degenerate ranges (zero-length,
+ * inverted, negative, NaN, Infinity, float) fall back to the bare "📄 PDF"
+ * label. `truncated` appends " (truncated)".
+ *
+ * Examples: `{ mediaType:"pdf", mediaStart:0, mediaEnd:1 }` → "📄 PDF page 1"
+ *           `{ mediaType:"image", truncated:true }` → "🖼 Image (truncated)"
+ */
+export function formatMediaLabel(hit: Pick<DocindexHit, "mediaType" | "mediaStart" | "mediaEnd" | "truncated">): string {
+    const { mediaType, mediaStart, mediaEnd, truncated } = hit;
+
+    let base: string;
+    if (mediaType === "image") {
+        base = "🖼 Image";
+    } else if (mediaType === "pdf") {
+        // Requires non-null finite integers, mediaStart ≥ 0, mediaEnd > mediaStart.
+        if (
+            mediaStart != null &&
+            mediaEnd != null &&
+            Number.isInteger(mediaStart) &&
+            Number.isInteger(mediaEnd) &&
+            mediaStart >= 0 &&
+            mediaEnd > mediaStart
+        ) {
+            const displayStart = mediaStart + 1;      // 0-based → 1-based
+            const displayEnd = mediaEnd;               // exclusive end = 1-based inclusive end
+            if (mediaEnd - mediaStart === 1) {
+                base = `📄 PDF page ${displayStart}`;
+            } else {
+                base = `📄 PDF pages ${displayStart}–${displayEnd}`;
+            }
+        } else {
+            base = "📄 PDF";
+        }
+    } else {
+        return "";
+    }
+
+    return truncated ? `${base} (truncated)` : base;
 }
