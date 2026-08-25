@@ -3,15 +3,9 @@ import { resolve } from "node:path";
 import { describe, expect, it } from "vitest";
 
 /**
- * Smoke test for the remote-only invariant.
- *
- * We don't boot the full Obsidian Plugin lifecycle here — instead we check
- * the static import list of `src/main.ts`. The remote-only build must not
- * import anything from the deleted local pipeline (embedding providers,
- * IndexedDB, model UI, orama, langchain, transformers, comlink, etc.).
- *
- * Future regressions that try to re-introduce a local pipeline under
- * `main.ts` will light this up immediately.
+ * Smoke test for the remote-only invariant: checks the static import list
+ * of `src/main.ts` for forbidden specifiers rather than booting the full
+ * Obsidian Plugin lifecycle.
  */
 describe("main.ts — remote-only import surface", () => {
     const source = readFileSync(

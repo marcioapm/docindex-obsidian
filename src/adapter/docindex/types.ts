@@ -17,8 +17,8 @@ export interface DocindexHitWire {
     heading_path: string | string[] | null;
     snippet: string;
     score: number;
-    // Optional: added in server v0.3+. Old servers don't emit these; the
-    // client falls back to `score` wherever `score_normalized` is missing.
+    // Absent on servers predating v0.3. When absent, no calibrated relevance
+    // score exists for this hit — clients must not fall back to `score`.
     score_rrf?: number;
     score_normalized?: number;
     chunk_id: string | number;

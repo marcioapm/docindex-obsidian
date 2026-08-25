@@ -46,7 +46,7 @@ async function runRequest(request: () => Promise<{ hits: DocindexHit[] }>): Prom
 export class RemoteSearchService {
     constructor(private readonly client: DocindexClient) {}
 
-    /** Text-to-similar-notes lookup. Matches the former `TextSearchService` surface. */
+    /** Text-to-similar-notes lookup: free-text query against /search. */
     async findSimilarNotesFromText(text: string, limit = 10): Promise<TextSearchResult> {
         const hits = await runRequest(() => this.client.search(text, limit));
         return {
@@ -63,7 +63,7 @@ export class RemoteSearchService {
         return { tokenCount: 0, maxTokens: 0, isOverLimit: false };
     }
 
-    /** Path-to-similar-notes lookup. Matches the former `SimilarNoteFinder` surface. */
+    /** Path-to-similar-notes lookup: note-similarity query against /similar. */
     async findSimilarNotes(note: Note, limit = 5): Promise<SimilarNote[]> {
         if (!note.path) return [];
         const hits = await runRequest(() => this.client.similar(note.path, limit));
