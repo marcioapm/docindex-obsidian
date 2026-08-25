@@ -139,10 +139,18 @@ describe("DocindexClient — isHitWire media field validation", () => {
         const { client } = makeClient({}, makeResponse({ media_end: true }));
         await expect(client.search("q")).rejects.toMatchObject({ kind: "malformed" });
     });
+
+    it("rejects a hit where media_unit is present but not a string or null", async () => {
+        // media_unit: 42 — a plausible server bug (numeric enum instead of string).
+        // Without this test, deleting the media_unit type guard in isHitWire
+        // passes the whole adapter suite.
+        const { client } = makeClient({}, makeResponse({ media_unit: 42 }));
+        await expect(client.search("q")).rejects.toMatchObject({ kind: "malformed" });
+    });
 });
 
 describe("DocindexClient — isHitWire null-as-absent semantics", () => {
-    it("accepts a payload with all media fields explicitly null", async () => {
+    it("accepts a payload with all media fields explicitly null and maps every field to its null-equivalent domain value", async () => {
         // Rust serde_json with Option<T> and no skip_serializing_if emits null rather
         // than omitting absent fields. isHitWire uses `!= null` (not `!== undefined`)
         // so null passes the same as undefined for every optional media field.
@@ -159,6 +167,15 @@ describe("DocindexClient — isHitWire null-as-absent semantics", () => {
         );
         const res = await client.search("q");
         expect(res.hits).toHaveLength(1);
-        expect(res.hits[0].mediaType).toBe("text");
+        const h = res.hits[0];
+        // mediaType defaults to "text" (not null — MediaType has no null member).
+        expect(h.mediaType).toBe("text");
+        expect(h.mimeType).toBeNull();
+        expect(h.mediaStart).toBeNull();
+        expect(h.mediaEnd).toBeNull();
+        expect(h.mediaUnit).toBeNull();
+        // truncated is boolean | undefined in the domain type — null is
+        // normalized to undefined, not passed through as null.
+        expect(h.truncated).toBeUndefined();
     });
 });

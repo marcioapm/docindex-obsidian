@@ -65,27 +65,29 @@ describe("SimilarNoteCoordinator — INDEXABLE_TEXT_EXTENSIONS", () => {
 
 describe("SimilarNoteCoordinator — getSimilarNotes media field mapping", () => {
     it("maps all four media fields from SimilarNote onto SimilarNoteEntry", async () => {
-        // An image hit with truncated=true ensures every value is non-default and
-        // distinguishable from SimilarNoteEntry defaults.
+        // A pdf hit with a non-null page range and truncated=true ensures every
+        // field is independently load-bearing: null-defaulting mediaStart/
+        // mediaEnd in the mapping (e.g. `mediaStart: null` instead of
+        // `similarNote.mediaStart`) would pass with null inputs but fails here.
         const { SimilarNote } = await import("@/domain/model/SimilarNote");
-        const imageNote = new SimilarNote(
-            "Photo",           // title
-            "assets/photo.png",// path
+        const pdfNote = new SimilarNote(
+            "Scan",            // title
+            "assets/scan.pdf", // path
             0.8,               // similarity
             "snippet",         // similarChunk
             "source",          // sourceChunk
             [],                // additionalChunks
             [],                // headingPath
-            "img:0",           // chunkId
-            "image",           // mediaType
-            null,              // mediaStart
-            null,              // mediaEnd
+            "pdf:0",           // chunkId
+            "pdf",             // mediaType
+            2,                 // mediaStart
+            5,                 // mediaEnd
             true               // truncated
         );
 
-        const photoFile = makeTFile("assets/photo.png", "png");
-        const vault = makeVault(new Map([["assets/photo.png", photoFile]]));
-        const finder = makeFinder([imageNote]);
+        const pdfFile = makeTFile("assets/scan.pdf", "pdf");
+        const vault = makeVault(new Map([["assets/scan.pdf", pdfFile]]));
+        const finder = makeFinder([pdfNote]);
 
         const coordinator = new SimilarNoteCoordinator(
             vault as Vault,
@@ -93,11 +95,11 @@ describe("SimilarNoteCoordinator — getSimilarNotes media field mapping", () =>
             makeSettingsService() as ReturnType<typeof makeSettingsService>
         );
 
-        const entries = await coordinator.getSimilarNotes(photoFile);
+        const entries = await coordinator.getSimilarNotes(pdfFile);
         expect(entries).toHaveLength(1);
-        expect(entries[0].mediaType).toBe("image");
-        expect(entries[0].mediaStart).toBeNull();
-        expect(entries[0].mediaEnd).toBeNull();
+        expect(entries[0].mediaType).toBe("pdf");
+        expect(entries[0].mediaStart).toBe(2);
+        expect(entries[0].mediaEnd).toBe(5);
         expect(entries[0].truncated).toBe(true);
     });
 });

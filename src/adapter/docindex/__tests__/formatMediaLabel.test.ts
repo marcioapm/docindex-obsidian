@@ -63,6 +63,14 @@ describe("formatMediaLabel — degenerate PDF page ranges fall back to bare labe
         expect(formatMediaLabel({ mediaType: "pdf", mediaStart: Infinity, mediaEnd: Infinity, truncated: false })).toBe("📄 PDF");
     });
 
+    it("Infinity end alone (finite start) → '📄 PDF'", () => {
+        // mediaStart=0 is finite and passes Number.isInteger; mediaEnd=Infinity is the
+        // only failing guard here. { Infinity, Infinity } alone would leave
+        // `Number.isInteger(mediaEnd)` un-exercised in isolation because
+        // `Infinity > Infinity` is already false regardless of that guard.
+        expect(formatMediaLabel({ mediaType: "pdf", mediaStart: 0, mediaEnd: Infinity, truncated: false })).toBe("📄 PDF");
+    });
+
     it("float start 1.5 → '📄 PDF'", () => {
         expect(formatMediaLabel({ mediaType: "pdf", mediaStart: 1.5, mediaEnd: 3, truncated: false })).toBe("📄 PDF");
     });
