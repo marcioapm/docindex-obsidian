@@ -95,6 +95,28 @@ describe("RemoteSearchService", () => {
         expect(result.mediaEnd).toBe(5);
         expect(result.truncated).toBe(true);
     });
+
+    it("leaves similarity undefined for an image hit even when score_normalized is present", async () => {
+        const svc = new RemoteSearchService(
+            mockClient({
+                hits: [hit({ path: "photo.png", mediaType: "image", scoreNormalized: 1.0 })],
+            })
+        );
+        const note = new Note("source.md", "source", "content", []);
+        const [result] = await svc.findSimilarNotes(note);
+        expect(result.similarity).toBeUndefined();
+    });
+
+    it("leaves similarity undefined for a PDF hit even when score_normalized is present", async () => {
+        const svc = new RemoteSearchService(
+            mockClient({
+                hits: [hit({ path: "doc.pdf", mediaType: "pdf", scoreNormalized: 1.0 })],
+            })
+        );
+        const note = new Note("source.md", "source", "content", []);
+        const [result] = await svc.findSimilarNotes(note);
+        expect(result.similarity).toBeUndefined();
+    });
 });
 
 describe("RemoteSearchService — error handling", () => {

@@ -381,4 +381,37 @@ describe("NoteBottomViewReact — media label rendering", () => {
         await screen.findByText("Plain Note");
         expect(document.querySelector(".docindex-media-type")).not.toBeInTheDocument();
     });
+
+    test("renders no percentage flair for a media entry with similarity undefined", async () => {
+        const currentFile = createMockTFile("current-file.md");
+        const leaf = { file: currentFile } as unknown as MarkdownView;
+        const { workspace: ws } = makeWorkspace();
+        const subject$ = new BehaviorSubject(
+            makeModel({
+                currentFile,
+                similarNoteEntries: [
+                    makeEntry({
+                        file: createMockTFile("scan.pdf"),
+                        title: "Scanned Report",
+                        preview: "PDF preview",
+                        similarity: undefined,
+                        mediaType: "pdf",
+                        mediaStart: 0,
+                        mediaEnd: 1,
+                    }),
+                ],
+            })
+        );
+        render(
+            <NoteBottomViewReact
+                workspace={ws as Workspace}
+                leaf={leaf}
+                bottomViewModelSubject$={subject$}
+                vaultName="test-vault"
+                viewType="bottom"
+            />
+        );
+        expect(await screen.findByText("Scanned Report")).toBeInTheDocument();
+        expect(screen.queryByText(/%$/)).not.toBeInTheDocument();
+    });
 });

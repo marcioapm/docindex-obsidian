@@ -2,7 +2,7 @@ import { Notice } from "obsidian";
 import type { Note } from "@/domain/model/Note";
 import { SimilarNote } from "@/domain/model/SimilarNote";
 import { DocindexError, type DocindexClient } from "./DocindexClient";
-import { getDisplayScore, type DocindexHit } from "./types";
+import { getDisplayScore, isThresholdEligible, type DocindexHit } from "./types";
 
 /**
  * Result shape for text-based semantic search.
@@ -95,7 +95,11 @@ function groupHitsByPath(hits: DocindexHit[], sourceChunk: string): SimilarNote[
         new SimilarNote(
             primary.title || primary.path,
             primary.path,
-            getDisplayScore(primary),
+            // Media scoreNormalized is rank-derived, not query-dependent
+            // (see isThresholdEligible) — rendering it as a relevance
+            // percentage would misrepresent an arbitrary vector-rank
+            // position as calibrated similarity.
+            isThresholdEligible(primary) ? getDisplayScore(primary) : undefined,
             primary.snippet,
             sourceChunk,
             extras,
