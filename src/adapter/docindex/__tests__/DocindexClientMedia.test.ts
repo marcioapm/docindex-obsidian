@@ -110,7 +110,7 @@ describe("DocindexClient — isHitWire media field validation", () => {
         expect(res.hits).toHaveLength(1);
     });
 
-    it.each([
+    for (const { name, field, valid, invalid } of [
         {
             name: "rejects a hit where a present media_type has the wrong type",
             field: "media_type",
@@ -147,13 +147,15 @@ describe("DocindexClient — isHitWire media field validation", () => {
             valid: "page",
             invalid: 42,
         },
-    ])("$name", async ({ field, valid, invalid }) => {
-        const validClient = makeClient({}, makeResponse({ [field]: valid })).client;
-        await expect(validClient.search("q")).resolves.toMatchObject({ hits: [{ path: "n.md" }] });
+    ]) {
+        it(name, async () => {
+            const validClient = makeClient({}, makeResponse({ [field]: valid })).client;
+            await expect(validClient.search("q")).resolves.toMatchObject({ hits: [{ path: "n.md" }] });
 
-        const invalidClient = makeClient({}, makeResponse({ [field]: invalid })).client;
-        await expect(invalidClient.search("q")).rejects.toMatchObject({ kind: "malformed" });
-    });
+            const invalidClient = makeClient({}, makeResponse({ [field]: invalid })).client;
+            await expect(invalidClient.search("q")).rejects.toMatchObject({ kind: "malformed" });
+        });
+    }
 });
 
 describe("DocindexClient — audio/video and unrecognized media_type", () => {

@@ -57,7 +57,7 @@ describe("SettingsService — load() rejects invalid persisted values", () => {
         expect(await loadSettings(Object.assign([], fields))).toEqual(DEFAULT_SETTINGS);
     });
 
-    it.each([
+    for (const { name, valid, invalid, validResult, fallback } of [
         {
             name: "rejects a string sidebarResultCount instead of letting it reach Math.max/slice",
             valid: { sidebarResultCount: 12 },
@@ -114,10 +114,12 @@ describe("SettingsService — load() rejects invalid persisted values", () => {
             validResult: { docindex: { limit: 50 } },
             fallback: { docindex: { limit: 10 } },
         },
-    ])("$name", async ({ valid, invalid, validResult, fallback }) => {
-        expect(await loadSettings(valid)).toMatchObject(validResult);
-        expect(await loadSettings(invalid)).toMatchObject(fallback);
-    });
+    ]) {
+        it(name, async () => {
+            expect(await loadSettings(valid)).toMatchObject(validResult);
+            expect(await loadSettings(invalid)).toMatchObject(fallback);
+        });
+    }
 
     it("rejects a null docindex block entirely, falling back to the complete default docindex object", async () => {
         expect((await loadSettings({ docindex: { enabled: true } })).docindex.enabled).toBe(true);
