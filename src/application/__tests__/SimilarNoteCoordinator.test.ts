@@ -212,7 +212,7 @@ describe("SimilarNoteCoordinator — cache invalidation on settings change", () 
         expect(finder.findSimilarNotes).toHaveBeenCalledTimes(2);
     });
 
-    it("still re-fetches on a sidebarResultCount/bottomResultCount change (regression guard)", async () => {
+    it("re-fetches on a sidebarResultCount/bottomResultCount change", async () => {
         const finder = makeFinder([]);
         const mdFile = makeTFile("notes/foo.md", "md");
         const vault = makeVault(new Map([["notes/foo.md", mdFile]]));
