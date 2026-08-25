@@ -12,6 +12,7 @@ import { SemanticLinkSuggest } from "./components/SemanticLinkSuggest";
 import { SimilarNotesSettingTab } from "./components/SimilarNotesSettingTab";
 import { SimilarNotesSidebarView } from "./components/SimilarNotesSidebarView";
 import { VIEW_TYPE_SIMILAR_NOTES_SIDEBAR } from "./constants/viewTypes";
+import { sanitizeErrorForLog } from "./utils/errorSanitizer";
 
 /**
  * docindex-obsidian — a thin remote-only client.
@@ -61,6 +62,17 @@ export default class MainPlugin extends Plugin {
                 await this.similarNoteCoordinator.onFileOpen(file);
             })
         );
+
+        // file-open only fires for future switches — a note already active
+        // when the plugin loads (e.g. on Obsidian restart) would otherwise
+        // leave the sidebar/bottom view empty until the user changes files.
+        this.app.workspace.onLayoutReady(() => {
+            this.similarNoteCoordinator
+                .onFileOpen(this.app.workspace.getActiveFile())
+                .catch((err: unknown) => {
+                    log.error(`docindex: failed to load similar notes for the active file: ${sanitizeErrorForLog(err)}`);
+                });
+        });
 
         this.registerView(
             VIEW_TYPE_SIMILAR_NOTES_SIDEBAR,
