@@ -194,4 +194,77 @@ describe("DocindexClient — isHitWire media field validation", () => {
         const { client } = makeClient({}, requestFn);
         await expect(client.search("q")).rejects.toMatchObject({ kind: "malformed" });
     });
+
+    it("rejects a hit where mime_type is present but not a string or null", async () => {
+        // Mutation: removing the mime_type type-check in isHitWire
+        // (`typeof v.mime_type !== "string"` guard) accepts the number 42,
+        // leaving this test to fail with a resolved value instead of rejection.
+        const requestFn = vi.fn().mockResolvedValue({
+            status: 200,
+            headers: {},
+            json: {
+                hits: [
+                    {
+                        path: "n.md",
+                        title: "N",
+                        heading_path: [],
+                        snippet: "s",
+                        score: 0.5,
+                        chunk_id: "c",
+                        mime_type: 42, // wrong type: number, not string or null
+                    },
+                ],
+            },
+        });
+        const { client } = makeClient({}, requestFn);
+        await expect(client.search("q")).rejects.toMatchObject({ kind: "malformed" });
+    });
+
+    it("rejects a hit where media_start is present but not a number or null", async () => {
+        // Mutation: removing the media_start type-check in isHitWire
+        // (`typeof v.media_start !== "number"` guard) accepts the string 'first'.
+        const requestFn = vi.fn().mockResolvedValue({
+            status: 200,
+            headers: {},
+            json: {
+                hits: [
+                    {
+                        path: "n.md",
+                        title: "N",
+                        heading_path: [],
+                        snippet: "s",
+                        score: 0.5,
+                        chunk_id: "c",
+                        media_start: "first", // wrong type: string, not number or null
+                    },
+                ],
+            },
+        });
+        const { client } = makeClient({}, requestFn);
+        await expect(client.search("q")).rejects.toMatchObject({ kind: "malformed" });
+    });
+
+    it("rejects a hit where media_end is present but not a number or null", async () => {
+        // Mutation: removing the media_end type-check in isHitWire
+        // (`typeof v.media_end !== "number"` guard) accepts the boolean true.
+        const requestFn = vi.fn().mockResolvedValue({
+            status: 200,
+            headers: {},
+            json: {
+                hits: [
+                    {
+                        path: "n.md",
+                        title: "N",
+                        heading_path: [],
+                        snippet: "s",
+                        score: 0.5,
+                        chunk_id: "c",
+                        media_end: true, // wrong type: boolean, not number or null
+                    },
+                ],
+            },
+        });
+        const { client } = makeClient({}, requestFn);
+        await expect(client.search("q")).rejects.toMatchObject({ kind: "malformed" });
+    });
 });
