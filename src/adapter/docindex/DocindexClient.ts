@@ -4,12 +4,12 @@ import { sanitizeErrorForLog } from "@/utils/errorSanitizer";
 import {
     getDisplayScore,
     isThresholdEligible,
+    KNOWN_MEDIA_TYPES,
     type DocindexHit,
     type DocindexHitWire,
     type DocindexSearchResponse,
     type DocindexSearchResponseWire,
     type DocindexSettings,
-    type MediaType,
 } from "./types";
 
 /**
@@ -164,8 +164,15 @@ function toDomainHit(wire: DocindexHitWire): DocindexHit {
         scoreRrf: wire.score_rrf,
         scoreNormalized: wire.score_normalized,
         chunkId: String(wire.chunk_id),
-        // Default to "text" — old servers pre-dating media indexing don't emit media_type.
-        mediaType: wire.media_type ?? "text",
+        // Default to "text" — old servers pre-dating media indexing don't
+        // emit media_type. A structurally valid but unrecognized value
+        // (server enum variant newer than this client) degrades to "other"
+        // rather than being rejected — see isHitWire.
+        mediaType: wire.media_type == null
+            ? "text"
+            : KNOWN_MEDIA_TYPES.has(wire.media_type)
+                ? (wire.media_type as DocindexHit["mediaType"])
+                : "other",
         mimeType: wire.mime_type,
         mediaStart: wire.media_start,
         mediaEnd: wire.media_end,
@@ -198,9 +205,6 @@ export function filterByThreshold(hits: DocindexHit[], threshold: number): Docin
     });
 }
 
-/** Valid values for the `media_type` field. Used in the runtime guard. */
-const VALID_MEDIA_TYPES: ReadonlySet<string> = new Set<MediaType>(["text", "image", "pdf"]);
-
 function isHitWire(v: unknown): v is DocindexHitWire {
     if (!isRecord(v)) return false;
     if (typeof v.path !== "string") return false;
@@ -225,9 +229,12 @@ function isHitWire(v: unknown): v is DocindexHitWire {
     // Media fields: all optional. null and undefined both mean "not applicable"
     // (`!= null` catches both). A present non-null value with the wrong type fails
     // immediately so server regressions surface before they corrupt domain state.
-    if (v.media_type != null) {
-        if (typeof v.media_type !== "string" || !VALID_MEDIA_TYPES.has(v.media_type)) return false;
-    }
+    // media_type only requires the string type, not membership in
+    // KNOWN_MEDIA_TYPES — a server enum variant added after this client is
+    // structurally valid and must degrade to "other" in toDomainHit rather
+    // than invalidate the whole response (see filterByThreshold's sibling
+    // rank-eligibility check for the same "unknown-but-valid" precedent).
+    if (v.media_type != null && typeof v.media_type !== "string") return false;
     if (v.mime_type !== undefined && v.mime_type !== null && typeof v.mime_type !== "string") return false;
     if (v.media_start !== undefined && v.media_start !== null && typeof v.media_start !== "number") return false;
     if (v.media_end !== undefined && v.media_end !== null && typeof v.media_end !== "number") return false;

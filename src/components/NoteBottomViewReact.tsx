@@ -4,6 +4,7 @@ import { Menu } from "obsidian";
 import { useEffect, useLayoutEffect, useState } from "react";
 import type { Observable } from "rxjs";
 import { formatMediaLabel } from "@/adapter/docindex";
+import type { MediaType } from "@/adapter/docindex";
 
 export interface SimilarNoteEntry {
     file: TFile;
@@ -25,7 +26,7 @@ export interface SimilarNoteEntry {
      */
     headingPath?: string[];
     /** Content category of the top-scoring chunk. Defaults to "text". */
-    mediaType?: "text" | "image" | "pdf";
+    mediaType?: MediaType;
     /** 0-based start page of the embedded range (PDFs). Null = not paginated. */
     mediaStart?: number | null;
     /** 0-based exclusive end page of the embedded range (PDFs). Null = not paginated. */

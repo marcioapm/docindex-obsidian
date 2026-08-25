@@ -42,6 +42,24 @@ describe("formatMediaLabel", () => {
     });
 });
 
+describe("formatMediaLabel — audio, video, and unrecognized media types", () => {
+    it("returns '🎵 Audio' for an audio hit", () => {
+        expect(formatMediaLabel({ mediaType: "audio", mediaStart: null, mediaEnd: null, truncated: false })).toBe("🎵 Audio");
+    });
+
+    it("returns '🎬 Video' for a video hit", () => {
+        expect(formatMediaLabel({ mediaType: "video", mediaStart: null, mediaEnd: null, truncated: false })).toBe("🎬 Video");
+    });
+
+    it("returns '📎 Media' for an unrecognized-but-structurally-valid media type", () => {
+        expect(formatMediaLabel({ mediaType: "other", mediaStart: null, mediaEnd: null, truncated: false })).toBe("📎 Media");
+    });
+
+    it("appends '(truncated)' to an audio label when truncated is true", () => {
+        expect(formatMediaLabel({ mediaType: "audio", mediaStart: null, mediaEnd: null, truncated: true })).toBe("🎵 Audio (truncated)");
+    });
+});
+
 describe("formatMediaLabel — degenerate PDF page ranges fall back to bare label", () => {
     it("zero-length range [2,2) → '📄 PDF'", () => {
         expect(formatMediaLabel({ mediaType: "pdf", mediaStart: 2, mediaEnd: 2, truncated: false })).toBe("📄 PDF");

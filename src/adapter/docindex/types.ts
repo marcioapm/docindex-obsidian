@@ -6,8 +6,24 @@
  * in `DocindexClient`.
  */
 
-/** Discriminated union matching the server's `MediaType` enum. */
-export type MediaType = "text" | "image" | "pdf";
+/**
+ * Discriminated union matching the server's `MediaType` enum
+ * (`Text|Image|Pdf|Audio|Video`), plus `"other"` for a structurally valid
+ * but unrecognized value — forward-compat for a server enum variant added
+ * after this client. `"other"` is never emitted by `toDomainHit` for a
+ * known variant; it only appears when the wire value is an unrecognized
+ * string.
+ */
+export type MediaType = "text" | "image" | "pdf" | "audio" | "video" | "other";
+
+/** Media types the server enum currently defines. */
+export const KNOWN_MEDIA_TYPES: ReadonlySet<string> = new Set<MediaType>([
+    "text",
+    "image",
+    "pdf",
+    "audio",
+    "video",
+]);
 
 export interface DocindexHitWire {
     path: string;
@@ -24,7 +40,10 @@ export interface DocindexHitWire {
     chunk_id: string | number;
     // Optional media fields: absent on old servers. null and undefined both
     // mean "not applicable" — see isHitWire for the validation contract.
-    media_type?: MediaType | null;
+    // Typed as a bare string (not MediaType) because the wire value is
+    // validated, not trusted — an unrecognized-but-well-typed value must
+    // degrade individually (see toDomainHit), not fail isHitWire.
+    media_type?: string | null;
     mime_type?: string | null;
     /** 0-based start of the half-open page range [media_start, media_end). */
     media_start?: number | null;
@@ -124,6 +143,10 @@ export function isThresholdEligible(hit: DocindexHit): boolean {
  * inverted, negative, NaN, Infinity, float) fall back to the bare "📄 PDF"
  * label. `truncated` appends " (truncated)".
  *
+ * Audio, video, and an unrecognized-but-structurally-valid type ("other")
+ * get a bare generic label — the server enum admits them but the client
+ * has no format-specific rendering (e.g. timestamps) for them yet.
+ *
  * Examples: `{ mediaType:"pdf", mediaStart:0, mediaEnd:1 }` → "📄 PDF page 1"
  *           `{ mediaType:"image", truncated:true }` → "🖼 Image (truncated)"
  */
@@ -153,6 +176,12 @@ export function formatMediaLabel(hit: Pick<DocindexHit, "mediaType" | "mediaStar
         } else {
             base = "📄 PDF";
         }
+    } else if (mediaType === "audio") {
+        base = "🎵 Audio";
+    } else if (mediaType === "video") {
+        base = "🎬 Video";
+    } else if (mediaType === "other") {
+        base = "📎 Media";
     } else {
         return "";
     }

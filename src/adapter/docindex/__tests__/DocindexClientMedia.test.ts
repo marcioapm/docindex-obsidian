@@ -115,8 +115,8 @@ describe("DocindexClient — isHitWire media field validation", () => {
         expect(res.hits).toHaveLength(1);
     });
 
-    it("rejects a hit where a present media_type has an unrecognised value", async () => {
-        const { client } = makeClient({}, makeResponse({ media_type: "video" }));
+    it("rejects a hit where a present media_type has the wrong type", async () => {
+        const { client } = makeClient({}, makeResponse({ media_type: 42 }));
         await expect(client.search("q")).rejects.toMatchObject({ kind: "malformed" });
     });
 
@@ -142,10 +142,41 @@ describe("DocindexClient — isHitWire media field validation", () => {
 
     it("rejects a hit where media_unit is present but not a string or null", async () => {
         // media_unit: 42 — a plausible server bug (numeric enum instead of string).
-        // Without this test, deleting the media_unit type guard in isHitWire
-        // passes the whole adapter suite.
         const { client } = makeClient({}, makeResponse({ media_unit: 42 }));
         await expect(client.search("q")).rejects.toMatchObject({ kind: "malformed" });
+    });
+});
+
+describe("DocindexClient — audio/video and unrecognized media_type", () => {
+    it("maps an audio hit to mediaType 'audio' without discarding other hits in the response", async () => {
+        const requestFn = vi.fn().mockResolvedValue({
+            status: 200,
+            headers: {},
+            json: {
+                hits: [
+                    makeHitJson({ path: "song.mp3", media_type: "audio" }),
+                    makeHitJson({ path: "note.md" }),
+                ],
+            },
+        });
+        const { client } = makeClient({}, requestFn);
+        const res = await client.search("q");
+        expect(res.hits).toHaveLength(2);
+        expect(res.hits[0].mediaType).toBe("audio");
+        expect(res.hits[1].mediaType).toBe("text");
+    });
+
+    it("maps a video hit to mediaType 'video'", async () => {
+        const { client } = makeClient({}, makeResponse({ media_type: "video" }));
+        const res = await client.search("q");
+        expect(res.hits[0].mediaType).toBe("video");
+    });
+
+    it("degrades a structurally valid but unrecognized media_type string to 'other' instead of rejecting the response", async () => {
+        const { client } = makeClient({}, makeResponse({ media_type: "spreadsheet" }));
+        const res = await client.search("q");
+        expect(res.hits).toHaveLength(1);
+        expect(res.hits[0].mediaType).toBe("other");
     });
 });
 
