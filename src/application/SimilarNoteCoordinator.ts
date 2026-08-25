@@ -9,17 +9,12 @@ import type { TFile, Vault } from "obsidian";
 import { BehaviorSubject } from "rxjs";
 import type { SettingsService, SimilarNotesSettings } from "./SettingsService";
 
-/**
- * Minimal surface SimilarNoteCoordinator depends on. Structural interface so
- * any remote or local similar-note provider can be injected.
- */
 interface SimilarNoteFinderLike {
     findSimilarNotes(note: Note, limit?: number): Promise<SimilarNote[]>;
 }
 
 interface SimilarNoteCacheEntry {
     mtime: number;
-    /** Settings generation active when this entry was computed (see `settingsGeneration`). */
     settingsGeneration: number;
     notes: SimilarNoteEntry[];
 }
@@ -34,11 +29,6 @@ const MAX_CACHE_SIZE = 20;
  */
 export const INDEXABLE_TEXT_EXTENSIONS = new Set(["md", "txt"]);
 
-/**
- * Settings fields that change what `getSimilarNotes` fetches or how it maps
- * results. A change to any other field (`noteDisplayMode`,
- * `semanticLinkTrigger`) must not invalidate the cache.
- */
 const RETRIEVAL_AFFECTING_KEYS: ReadonlySet<keyof SimilarNotesSettings> = new Set([
     "docindex",
     "showSourceChunk",
@@ -65,16 +55,7 @@ export class SimilarNoteCoordinator {
         bottomResultCount: 5,
     });
     private cache = new Map<string, SimilarNoteCacheEntry>();
-    /**
-     * Bumped only when a field affecting retrieval or the mapped entries
-     * changes: `docindex`, `showSourceChunk`, `sidebarResultCount`,
-     * `bottomResultCount`. Cache entries are stamped with the generation
-     * captured when the request started, so a response computed under
-     * settings that changed mid-flight is never cached or emitted as
-     * current — and a stale entry from before such a change is never
-     * served. View-only fields (`noteDisplayMode`, `semanticLinkTrigger`)
-     * do not bump this counter.
-     */
+    // Identifies the settings generation used to fetch each cache entry.
     private settingsGeneration = 0;
 
     constructor(
@@ -148,10 +129,7 @@ export class SimilarNoteCoordinator {
             return cacheEntry.notes;
         }
 
-        // Captured before any await: the generation this request is
-        // computing under. If it no longer matches `this.settingsGeneration`
-        // once the awaited work resolves, settings changed mid-flight and
-        // the result must not be cached or treated as current.
+        // Capture before I/O so old-settings responses cannot enter the current cache.
         const requestGeneration = this.settingsGeneration;
         const settings = this.settingsService.get();
         const content = await this.vault.cachedRead(file);
@@ -166,11 +144,6 @@ export class SimilarNoteCoordinator {
         );
 
         if (requestGeneration !== this.settingsGeneration) {
-            // Settings changed while this request was in flight. `settings`,
-            // `maxResultCount`, and `similarNotes` all reflect the stale
-            // generation — restart under the current settings instead of
-            // caching or returning a response computed under settings that
-            // no longer apply.
             return this.getSimilarNotes(file);
         }
 

@@ -12,10 +12,6 @@ import {
     type DocindexSettings,
 } from "./types";
 
-/**
- * Errors surfaced by the client. Kept narrow so callers can decide which to
- * show to the user vs log.
- */
 export type DocindexErrorKind =
     | "not-configured"
     | "network"
@@ -56,7 +52,6 @@ export class DocindexClient {
         return s.enabled && s.backendUrl.trim().length > 0 && s.bearerToken.trim().length > 0;
     }
 
-    /** Re-enable after settings changed. */
     reset(): void {
         this.disabledForSession = false;
     }
@@ -148,9 +143,7 @@ function toDomainHit(wire: DocindexHitWire): DocindexHit {
     if (Array.isArray(wire.heading_path)) {
         headingPath = wire.heading_path;
     } else if (typeof wire.heading_path === "string" && wire.heading_path.length > 0) {
-        // Server currently emits a pre-joined string like
-        // "foo.md - Section > Subsection". Split on " > " and drop any
-        // leading filename token ending in " - ".
+        // The server may prefix the heading chain with "filename - ".
         const first = wire.heading_path.split(" - ", 2);
         const body = first.length === 2 ? first[1] : first[0];
         headingPath = body.split(" > ").filter((s) => s.length > 0);
@@ -164,10 +157,7 @@ function toDomainHit(wire: DocindexHitWire): DocindexHit {
         scoreRrf: wire.score_rrf,
         scoreNormalized: wire.score_normalized,
         chunkId: String(wire.chunk_id),
-        // Default to "text" — old servers pre-dating media indexing don't
-        // emit media_type. A structurally valid but unrecognized value
-        // (server enum variant newer than this client) degrades to "other"
-        // rather than being rejected — see isHitWire.
+        // Missing and unknown server variants degrade without rejecting other hits.
         mediaType: wire.media_type == null
             ? "text"
             : KNOWN_MEDIA_TYPES.has(wire.media_type)
@@ -177,7 +167,6 @@ function toDomainHit(wire: DocindexHitWire): DocindexHit {
         mediaStart: wire.media_start,
         mediaEnd: wire.media_end,
         mediaUnit: wire.media_unit,
-        // Normalize null to undefined: DocindexHit.truncated is boolean | undefined.
         truncated: wire.truncated ?? undefined,
     };
 }
@@ -186,16 +175,7 @@ function isRecord(v: unknown): v is Record<string, unknown> {
     return typeof v === "object" && v !== null && !Array.isArray(v);
 }
 
-/**
- * Drops hits whose display score is below `threshold`. Threshold ≤ 0 is a
- * no-op so users who disable filtering see everything the server returned.
- *
- * Only applies to threshold-eligible hits (see `isThresholdEligible`):
- * text hits with a server-supplied `scoreNormalized`. Media hits and
- * legacy responses without `scoreNormalized` pass through unfiltered —
- * there is no calibrated, query-dependent score to compare against the
- * threshold.
- */
+/** Filters calibrated text scores; media and uncalibrated hits always pass. */
 export function filterByThreshold(hits: DocindexHit[], threshold: number): DocindexHit[] {
     if (!(threshold > 0)) return hits;
     return hits.filter((h) => {
@@ -226,14 +206,7 @@ function isHitWire(v: unknown): v is DocindexHitWire {
             return false;
         }
     }
-    // Media fields: all optional. null and undefined both mean "not applicable"
-    // (`!= null` catches both). A present non-null value with the wrong type fails
-    // immediately so server regressions surface before they corrupt domain state.
-    // media_type only requires the string type, not membership in
-    // KNOWN_MEDIA_TYPES — a server enum variant added after this client is
-    // structurally valid and must degrade to "other" in toDomainHit rather
-    // than invalidate the whole response (see filterByThreshold's sibling
-    // rank-eligibility check for the same "unknown-but-valid" precedent).
+    // Unknown media_type strings are valid and map to "other".
     if (v.media_type != null && typeof v.media_type !== "string") return false;
     if (v.mime_type !== undefined && v.mime_type !== null && typeof v.mime_type !== "string") return false;
     if (v.media_start !== undefined && v.media_start !== null && typeof v.media_start !== "number") return false;

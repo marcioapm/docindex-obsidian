@@ -6,14 +6,7 @@
  * in `DocindexClient`.
  */
 
-/**
- * Discriminated union matching the server's `MediaType` enum
- * (`Text|Image|Pdf|Audio|Video`), plus `"other"` for a structurally valid
- * but unrecognized value — forward-compat for a server enum variant added
- * after this client. `"other"` is never emitted by `toDomainHit` for a
- * known variant; it only appears when the wire value is an unrecognized
- * string.
- */
+/** Known server media variants plus a fallback for unknown strings. */
 export type MediaType = "text" | "image" | "pdf" | "audio" | "video" | "other";
 
 /** Media types the server enum currently defines. */
@@ -33,16 +26,11 @@ export interface DocindexHitWire {
     heading_path: string | string[] | null;
     snippet: string;
     score: number;
-    // Absent on servers predating v0.3. When absent, no calibrated relevance
-    // score exists for this hit — clients must not fall back to `score`.
+    // Absent when the server supplies no calibrated relevance score.
     score_rrf?: number;
     score_normalized?: number;
     chunk_id: string | number;
-    // Optional media fields: absent on old servers. null and undefined both
-    // mean "not applicable" — see isHitWire for the validation contract.
-    // Typed as a bare string (not MediaType) because the wire value is
-    // validated, not trusted — an unrecognized-but-well-typed value must
-    // degrade individually (see toDomainHit), not fail isHitWire.
+    // Bare string allows unknown server variants to degrade to "other".
     media_type?: string | null;
     mime_type?: string | null;
     /** 0-based start of the half-open page range [media_start, media_end). */
@@ -73,7 +61,7 @@ export interface DocindexHit {
      */
     scoreNormalized?: number;
     chunkId: string;
-    /** Defaults to "text" when absent from the wire payload (old servers). */
+    /** Defaults to "text" when absent from the wire payload. */
     mediaType: MediaType;
     mimeType?: string | null;
     /** 0-based start of the half-open page range [mediaStart, mediaEnd). Null = not paginated. */
@@ -81,7 +69,7 @@ export interface DocindexHit {
     /** 0-based exclusive end of the page range. Null = not paginated. */
     mediaEnd?: number | null;
     mediaUnit?: string | null;
-    /** Undefined when absent from wire; treat as false. */
+    /** Undefined when absent from the wire payload. */
     truncated?: boolean;
 }
 
@@ -94,13 +82,7 @@ export interface DocindexSettings {
     backendUrl: string;
     bearerToken: string;
     limit: number;
-    /**
-     * Text hits with `scoreNormalized` below this value are hidden from both
-     * the sidebar and the semantic-search modal. Range 0.0-1.0. 0 = show
-     * everything. 1 = only rank-1-in-both-branches hits. Typical sweet spot:
-     * 0.35-0.60. Does not apply to media hits (see `isThresholdEligible`) or
-     * to hits from servers that don't supply `scoreNormalized`.
-     */
+    /** Minimum calibrated text score in [0, 1]; 0 disables filtering. */
     relevanceThreshold: number;
 }
 
@@ -112,23 +94,12 @@ export const DEFAULT_DOCINDEX_SETTINGS: DocindexSettings = {
     relevanceThreshold: 0.4,
 };
 
-/**
- * Returns `hit.scoreNormalized`, or `undefined` when the server didn't
- * supply it (pre-v0.3). RRF (`hit.score`) is not in [0, 1] and must never
- * be used as a display or threshold value — there is no calibrated
- * fallback for legacy responses.
- */
+/** Returns the calibrated score, with no RRF fallback. */
 export function getDisplayScore(hit: DocindexHit): number | undefined {
     return hit.scoreNormalized;
 }
 
-/**
- * A hit's score can drive `relevanceThreshold` filtering only when it is
- * both present and query-dependent. Media `scoreNormalized` is currently
- * `(k+1)/(k+vector_rank)` — a function of rank, not of the query — so it
- * would either admit the top hit unconditionally or reject genuinely
- * relevant results past a fixed rank. Text scores are query-dependent.
- */
+/** Media scores are rank-derived and cannot drive thresholds or percentages. */
 export function isThresholdEligible(hit: DocindexHit): boolean {
     return hit.scoreNormalized !== undefined && hit.mediaType === "text";
 }
@@ -143,10 +114,6 @@ export function isThresholdEligible(hit: DocindexHit): boolean {
  * inverted, negative, NaN, Infinity, float) fall back to the bare "📄 PDF"
  * label. `truncated` appends " (truncated)".
  *
- * Audio, video, and an unrecognized-but-structurally-valid type ("other")
- * get a bare generic label — the server enum admits them but the client
- * has no format-specific rendering (e.g. timestamps) for them yet.
- *
  * Examples: `{ mediaType:"pdf", mediaStart:0, mediaEnd:1 }` → "📄 PDF page 1"
  *           `{ mediaType:"image", truncated:true }` → "🖼 Image (truncated)"
  */
@@ -157,7 +124,6 @@ export function formatMediaLabel(hit: Pick<DocindexHit, "mediaType" | "mediaStar
     if (mediaType === "image") {
         base = "🖼 Image";
     } else if (mediaType === "pdf") {
-        // Requires non-null finite integers, mediaStart ≥ 0, mediaEnd > mediaStart.
         if (
             mediaStart != null &&
             mediaEnd != null &&
@@ -166,8 +132,8 @@ export function formatMediaLabel(hit: Pick<DocindexHit, "mediaType" | "mediaStar
             mediaStart >= 0 &&
             mediaEnd > mediaStart
         ) {
-            const displayStart = mediaStart + 1;      // 0-based → 1-based
-            const displayEnd = mediaEnd;               // exclusive end = 1-based inclusive end
+            const displayStart = mediaStart + 1;
+            const displayEnd = mediaEnd;
             if (mediaEnd - mediaStart === 1) {
                 base = `📄 PDF page ${displayStart}`;
             } else {

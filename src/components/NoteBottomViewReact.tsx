@@ -9,7 +9,7 @@ import type { MediaType } from "@/adapter/docindex";
 export interface SimilarNoteEntry {
     file: TFile;
     title: string;
-    /** 0..1 relevance score, or `undefined` when none is available to display. */
+    /** Calibrated 0..1 relevance score, when available. */
     similarity: number | undefined;
     preview: string;
     sourceChunk?: string;
@@ -25,7 +25,7 @@ export interface SimilarNoteEntry {
      * heading; otherwise the note opens at the top.
      */
     headingPath?: string[];
-    /** Content category of the top-scoring chunk. Defaults to "text". */
+    /** Content category of the top-scoring chunk. */
     mediaType?: MediaType;
     /** 0-based start page of the embedded range (PDFs). Null = not paginated. */
     mediaStart?: number | null;

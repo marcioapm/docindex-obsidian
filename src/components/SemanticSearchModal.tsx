@@ -9,10 +9,6 @@ import type { SimilarNote } from "@/domain/model/SimilarNote";
 import type { TextSearchResult } from "@/adapter/docindex";
 import { formatMediaLabel } from "@/adapter/docindex";
 
-/**
- * Minimal structural surface the modal depends on. Satisfied by
- * `RemoteSearchService`.
- */
 interface TextSearchServiceLike {
     findSimilarNotesFromText(text: string, limit?: number): Promise<TextSearchResult>;
 }
@@ -147,11 +143,7 @@ interface SemanticSearchContentProps {
     onClose: () => void;
 }
 
-/**
- * Debounced remote search with a request-generation guard against
- * out-of-order completions. Exported for direct hook testing — the
- * generation guard is otherwise unobservable through the DOM alone.
- */
+/** Debounced remote search protected from out-of-order completions. */
 export function useSemanticSearch(textSearchService: TextSearchServiceLike) {
     const [query, setQuery] = useState("");
     const [results, setResults] = useState<SimilarNote[]>([]);
@@ -164,12 +156,7 @@ export function useSemanticSearch(textSearchService: TextSearchServiceLike) {
     const [selectionSource, setSelectionSource] =
         useState<"keyboard" | "reset">("reset");
     const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-    // Bumped synchronously on every query change (short-query path included)
-    // and on unmount, before any request is scheduled. A request applies its
-    // result only if this counter still matches the value it captured at
-    // scheduling time — otherwise a slower older request would overwrite a
-    // newer one's results, resurrect stale results/warnings, or clear the
-    // spinner while a newer request is still in flight or debouncing.
+    // Incremented before debounce scheduling so old responses become stale immediately.
     const generationRef = useRef(0);
 
     const selectByKeyboard = useCallback((updater: (prev: number) => number) => {
@@ -208,9 +195,6 @@ export function useSemanticSearch(textSearchService: TextSearchServiceLike) {
 
     useEffect(() => {
         if (debounceRef.current) clearTimeout(debounceRef.current);
-        // Invalidate the previous request immediately — not after the debounce
-        // fires — so a change to `query` cannot be overtaken by an in-flight
-        // request that was still current under the old query.
         const generation = ++generationRef.current;
 
         if (query.length < MIN_SEARCH_LENGTH) {
@@ -227,8 +211,6 @@ export function useSemanticSearch(textSearchService: TextSearchServiceLike) {
         };
     }, [query, performSearch]);
 
-    // Invalidate any in-flight request on unmount so its resolution can't
-    // apply state to a component that's gone.
     useEffect(() => {
         return () => {
             generationRef.current++;
