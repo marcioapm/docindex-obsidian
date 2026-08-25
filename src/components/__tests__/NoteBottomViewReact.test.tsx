@@ -160,3 +160,127 @@ describe("SimilarNotesViewReact", () => {
         expect(mockOpenLinkText).toHaveBeenCalledWith("similar1.md", "", false);
     });
 });
+
+describe("SimilarNotesViewReact — media label rendering", () => {
+    // Tests for the label block in SearchResult (NoteBottomViewReact.tsx:244–253).
+    // Each fixture exercises a branch that the existing tests leave dead.
+
+    function makeWorkspace(leaf: MarkdownView): Partial<Workspace> {
+        return {
+            getLeaf: vi.fn().mockReturnValue(leaf),
+            openLinkText: vi.fn(),
+            on: vi.fn().mockReturnValue({}),
+            offref: vi.fn(),
+        };
+    }
+
+    test("renders docindex-media-type element for a PDF hit with a page range", async () => {
+        // Mutation: removing the `label ? ... : null` conditional in SearchResult
+        // (replacing it with `null` unconditionally) leaves this assertion failing
+        // because the element is never rendered.
+        const currentFile = createMockTFile("current-file.md");
+        const leaf = { file: currentFile } as unknown as MarkdownView;
+        const subject$ = new BehaviorSubject({
+            currentFile,
+            similarNoteEntries: [
+                {
+                    file: createMockTFile("report.pdf"),
+                    title: "Annual Report",
+                    preview: "PDF preview",
+                    similarity: 0.9,
+                    mediaType: "pdf" as const,
+                    mediaStart: 0,
+                    mediaEnd: 2,
+                    truncated: false,
+                },
+            ],
+            noteDisplayMode: "title" as const,
+            sidebarResultCount: 10,
+            bottomResultCount: 5,
+        });
+        render(
+            <NoteBottomViewReact
+                workspace={makeWorkspace(leaf) as unknown as Workspace}
+                leaf={leaf}
+                bottomViewModelSubject$={subject$}
+                vaultName="test-vault"
+            />
+        );
+        // "📄 PDF pages 1–2" from mediaStart=0, mediaEnd=2 (0-based half-open → 1-based inclusive).
+        expect(await screen.findByText("📄 PDF pages 1–2")).toBeInTheDocument();
+        const labelEl = screen.getByText("📄 PDF pages 1–2");
+        expect(labelEl.className).toContain("docindex-media-type");
+    });
+
+    test("renders docindex-media-type element for an image hit", async () => {
+        // Mutation: removing the image branch in formatMediaLabel (returning ""
+        // for image hits) causes the element to be absent from the DOM.
+        const currentFile = createMockTFile("current-file.md");
+        const leaf = { file: currentFile } as unknown as MarkdownView;
+        const subject$ = new BehaviorSubject({
+            currentFile,
+            similarNoteEntries: [
+                {
+                    file: createMockTFile("photo.png"),
+                    title: "Vacation Photo",
+                    preview: "Image preview",
+                    similarity: 0.75,
+                    mediaType: "image" as const,
+                    mediaStart: null,
+                    mediaEnd: null,
+                    truncated: false,
+                },
+            ],
+            noteDisplayMode: "title" as const,
+            sidebarResultCount: 10,
+            bottomResultCount: 5,
+        });
+        render(
+            <NoteBottomViewReact
+                workspace={makeWorkspace(leaf) as unknown as Workspace}
+                leaf={leaf}
+                bottomViewModelSubject$={subject$}
+                vaultName="test-vault"
+            />
+        );
+        expect(await screen.findByText("🖼 Image")).toBeInTheDocument();
+        const labelEl = screen.getByText("🖼 Image");
+        expect(labelEl.className).toContain("docindex-media-type");
+    });
+
+    test("renders no docindex-media-type element for a text hit", async () => {
+        // Mutation: rendering the label unconditionally (removing the `label &&`
+        // guard) would produce a docindex-media-type element even for text hits,
+        // breaking the `not.toBeInTheDocument()` assertion.
+        const currentFile = createMockTFile("current-file.md");
+        const leaf = { file: currentFile } as unknown as MarkdownView;
+        const subject$ = new BehaviorSubject({
+            currentFile,
+            similarNoteEntries: [
+                {
+                    file: createMockTFile("note.md"),
+                    title: "Plain Note",
+                    preview: "Text preview",
+                    similarity: 0.8,
+                    mediaType: "text" as const,
+                    mediaStart: null,
+                    mediaEnd: null,
+                    truncated: false,
+                },
+            ],
+            noteDisplayMode: "title" as const,
+            sidebarResultCount: 10,
+            bottomResultCount: 5,
+        });
+        render(
+            <NoteBottomViewReact
+                workspace={makeWorkspace(leaf) as unknown as Workspace}
+                leaf={leaf}
+                bottomViewModelSubject$={subject$}
+                vaultName="test-vault"
+            />
+        );
+        await screen.findByText("Plain Note");
+        expect(document.querySelector(".docindex-media-type")).not.toBeInTheDocument();
+    });
+});

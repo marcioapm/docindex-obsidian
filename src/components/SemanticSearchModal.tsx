@@ -63,7 +63,7 @@ interface SearchResultItemProps {
     onInsertLink: () => void;
 }
 
-const SearchResultItem: React.FC<SearchResultItemProps> = ({
+export const SearchResultItem: React.FC<SearchResultItemProps> = ({
     note,
     file,
     isSelected,
