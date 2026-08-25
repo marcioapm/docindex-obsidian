@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { RemoteSearchService } from "../RemoteSearchService";
 import { DocindexError, type DocindexClient } from "../DocindexClient";
-import type { DocindexHit, DocindexSearchResponse } from "../types";
+import { getDisplayScore, type DocindexHit, type DocindexSearchResponse } from "../types";
 import { Note } from "@/domain/model/Note";
 
 const noticeMessages: string[] = [];
@@ -50,6 +50,10 @@ beforeEach(() => {
 });
 
 describe("RemoteSearchService", () => {
+    it("does not use raw score when score_normalized is missing", () => {
+        expect(getDisplayScore(hit({ score: 0.42, scoreNormalized: undefined }))).toBeUndefined();
+    });
+
     it("maps score_normalized into SimilarNote.similarity", async () => {
         const svc = new RemoteSearchService(mockClient({ hits: [hit()] }));
         const res = await svc.findSimilarNotesFromText("query");
